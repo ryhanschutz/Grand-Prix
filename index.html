@@ -1,0 +1,861 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ValeRoute — Porto Ponta da Madeira</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    :root {
+      --font: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      --bg: #FFFFFF;
+      --bg-subtle: #FAFAFA;
+      --bg-muted: #F4F4F5;
+      --border: #E4E4E7;
+      --border-muted: #F4F4F5;
+      --text: #18181B;
+      --text-2: #52525B;
+      --text-3: #71717A;
+      --text-4: #A1A1AA;
+      --green: #22C55E;
+      --green-bg: #DCFCE7;
+      --green-text: #15803D;
+      --yellow: #EAB308;
+      --yellow-bg: #FEF9C3;
+      --yellow-text: #A16207;
+      --red: #EF4444;
+      --red-bg: #FEF2F2;
+      --red-border: #FECACA;
+      --red-text: #DC2626;
+      --blue: #3B82F6;
+      --blue-bg: #DBEAFE;
+      --blue-text: #1D4ED8;
+      --sidebar: 316px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow: hidden; }
+    body {
+      font-family: var(--font);
+      font-size: 13px;
+      color: var(--text);
+      background: var(--bg);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Layout ── */
+    #app { display: flex; height: 100vh; }
+
+    /* ── Sidebar ── */
+    #sidebar {
+      width: var(--sidebar);
+      min-width: var(--sidebar);
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      background: var(--bg-subtle);
+      border-right: 1px solid var(--border);
+    }
+
+    .s-header {
+      padding: 13px 14px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+    .logo {
+      width: 30px; height: 30px;
+      background: #0047BB;
+      border-radius: 7px;
+      display: flex; align-items: center; justify-content: center;
+      color: #fff; font-weight: 800; font-size: 13px;
+      letter-spacing: -0.5px; flex-shrink: 0;
+    }
+    .s-header-text { flex: 1; line-height: 1; }
+    .s-title { font-size: 14px; font-weight: 700; }
+    .s-sub   { font-size: 10px; color: var(--text-4); margin-top: 2px; }
+    .live-badge {
+      display: flex; align-items: center; gap: 4px;
+      font-size: 10px; font-weight: 600;
+      color: var(--green-text); background: var(--green-bg);
+      padding: 3px 7px; border-radius: 100px;
+    }
+    .live-dot {
+      width: 6px; height: 6px;
+      background: var(--green); border-radius: 50%;
+      animation: blink 1.5s infinite;
+    }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+    /* ── Tabs ── */
+    .s-tabs {
+      display: flex; padding: 6px 7px; gap: 1px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .tab-btn {
+      flex: 1; padding: 5px 4px;
+      font-size: 11px; font-weight: 500;
+      color: var(--text-3); background: transparent;
+      border: none; border-radius: 5px;
+      cursor: pointer; font-family: var(--font);
+      transition: background .1s, color .1s;
+    }
+    .tab-btn:hover  { background: var(--bg-muted); color: var(--text); }
+    .tab-btn.active { background: var(--text); color: #fff; }
+
+    /* ── Scrollable content ── */
+    .s-body { flex: 1; overflow-y: auto; }
+    .s-body::-webkit-scrollbar { width: 3px; }
+    .s-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    .section-lbl {
+      padding: 10px 14px 5px;
+      font-size: 10px; font-weight: 700;
+      color: var(--text-4);
+      text-transform: uppercase; letter-spacing: .1em;
+    }
+
+    /* ── Item rows ── */
+    .item-row {
+      padding: 8px 13px;
+      display: flex; align-items: center; gap: 9px;
+      cursor: pointer;
+      border-bottom: 1px solid var(--border-muted);
+      transition: background .1s;
+    }
+    .item-row:hover { background: var(--bg-muted); }
+
+    .item-icon {
+      width: 34px; height: 34px;
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px; flex-shrink: 0;
+    }
+    .i-van     { background: #EFF6FF; }
+    .i-truck   { background: #FFF7ED; }
+    .i-support { background: #F0FDF4; }
+    .i-team    { background: #EFF6FF; }
+
+    .item-body { flex: 1; min-width: 0; }
+    .item-title { font-size: 13px; font-weight: 600; }
+    .item-sub   { font-size: 11px; color: var(--text-3); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .item-right { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; flex-shrink: 0; }
+
+    .badge { font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 100px; }
+    .b-available { background: var(--green-bg);  color: var(--green-text); }
+    .b-route     { background: var(--yellow-bg); color: var(--yellow-text); }
+    .b-offline   { background: var(--bg-muted);  color: var(--text-4); }
+    .b-waiting   { background: var(--blue-bg);   color: var(--blue-text); }
+    .b-assigned  { background: var(--green-bg);  color: var(--green-text); }
+
+    /* ── Route cards ── */
+    .route-card {
+      margin: 6px 10px;
+      padding: 11px 12px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+    }
+    .rc-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 7px; }
+    .rc-id  { font-size: 10px; font-weight: 700; color: var(--text-4); letter-spacing: .05em; }
+    .rc-eta { font-size: 11px; font-weight: 700; color: var(--blue); }
+    .rc-parties { display: flex; align-items: center; gap: 5px; font-size: 12px; margin-bottom: 8px; }
+    .rc-v { font-weight: 700; }
+    .rc-arrow { color: var(--text-4); font-size: 10px; }
+    .rc-t { font-weight: 600; color: var(--blue); }
+    .progress-track { height: 3px; background: var(--bg-muted); border-radius: 2px; overflow: hidden; }
+    .progress-fill  { height: 100%; border-radius: 2px; transition: width 1s ease; background: linear-gradient(90deg,#3B82F6,#8B5CF6); }
+    .progress-foot  { display: flex; justify-content: space-between; margin-top: 4px; font-size: 10px; color: var(--text-4); }
+
+    /* ── Interdiction cards ── */
+    .interd-card {
+      margin: 6px 10px;
+      padding: 11px 12px;
+      background: var(--red-bg);
+      border: 1px solid var(--red-border);
+      border-radius: 10px;
+    }
+    .interd-name { font-size: 12px; font-weight: 700; color: var(--red-text); }
+    .interd-meta { font-size: 11px; color: var(--text-3); margin-top: 3px; }
+    .interd-time { font-size: 11px; color: var(--text-4); margin-top: 2px; }
+
+    /* ── Footer stats ── */
+    .s-footer {
+      padding: 9px 12px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      flex-shrink: 0;
+    }
+    .f-stat { flex: 1; text-align: center; }
+    .f-stat + .f-stat { border-left: 1px solid var(--border); }
+    .f-val { font-size: 16px; font-weight: 700; }
+    .f-lbl { font-size: 9px; color: var(--text-4); text-transform: uppercase; letter-spacing: .08em; margin-top: 1px; }
+
+    /* ── Map ── */
+    #map-wrap { flex: 1; position: relative; }
+    #map { width: 100%; height: 100%; }
+
+    /* ── Map overlays ── */
+    .m-pill {
+      position: absolute;
+      z-index: 1000;
+      background: rgba(255,255,255,.93);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border: 1px solid rgba(228,228,231,.9);
+      box-shadow: 0 1px 6px rgba(0,0,0,.07), 0 0 0 .5px rgba(0,0,0,.04);
+    }
+    .m-topbar {
+      top: 14px; left: 50%; transform: translateX(-50%);
+      border-radius: 100px;
+      padding: 5px 14px;
+      display: flex; align-items: center; gap: 7px;
+      font-size: 11px; font-weight: 600;
+      white-space: nowrap;
+    }
+    .m-clock {
+      top: 14px; right: 14px;
+      border-radius: 10px;
+      padding: 8px 12px; text-align: right;
+    }
+    .clock-time { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.5px; }
+    .clock-date { font-size: 10px; color: var(--text-3); margin-top: 1px; }
+    .m-actions {
+      bottom: 28px; left: 50%; transform: translateX(-50%);
+      border-radius: 14px;
+      padding: 7px 6px;
+      display: flex; align-items: center; gap: 2px;
+    }
+    .act-btn {
+      padding: 7px 13px;
+      font-size: 11px; font-weight: 600;
+      color: var(--text-3); background: transparent;
+      border: none; border-radius: 9px;
+      cursor: pointer; font-family: var(--font);
+      transition: background .1s, color .1s;
+      white-space: nowrap;
+    }
+    .act-btn:hover { background: var(--bg-muted); color: var(--text); }
+    .act-btn.primary { background: var(--text); color: #fff; }
+    .act-btn.primary:hover { background: #27272A; }
+    .act-divider { width: 1px; height: 20px; background: var(--border); margin: 0 3px; }
+
+    /* ── Toasts ── */
+    #toasts {
+      position: absolute; top: 54px; right: 14px;
+      z-index: 2000;
+      display: flex; flex-direction: column; gap: 6px;
+      pointer-events: none;
+    }
+    .toast {
+      background: #18181B; color: #fff;
+      border-radius: 10px;
+      padding: 10px 12px;
+      max-width: 256px;
+      box-shadow: 0 4px 14px rgba(0,0,0,.18);
+      border: 1px solid rgba(255,255,255,.07);
+      animation: t-in .2s cubic-bezier(.175,.885,.32,1.275);
+    }
+    .toast.out { animation: t-out .18s ease forwards; }
+    .t-title { font-size: 12px; font-weight: 600; }
+    .t-msg   { font-size: 11px; color: #A1A1AA; margin-top: 2px; }
+    @keyframes t-in  { from{opacity:0;transform:translateX(14px) scale(.96)} to{opacity:1;transform:none} }
+    @keyframes t-out { to  {opacity:0;transform:translateX(14px) scale(.96)} }
+
+    /* ── Leaflet overrides ── */
+    .leaflet-control-zoom {
+      border: 1px solid var(--border) !important;
+      border-radius: 8px !important;
+      box-shadow: 0 1px 4px rgba(0,0,0,.07) !important;
+      overflow: hidden;
+    }
+    .leaflet-control-zoom-in,
+    .leaflet-control-zoom-out {
+      font-family: var(--font) !important;
+      color: var(--text) !important;
+      width: 30px !important; height: 30px !important; line-height: 30px !important;
+    }
+    .leaflet-popup-content-wrapper {
+      border-radius: 10px !important;
+      box-shadow: 0 4px 16px rgba(0,0,0,.1), 0 0 0 1px rgba(0,0,0,.05) !important;
+      padding: 0 !important;
+    }
+    .leaflet-popup-content { margin: 12px 14px !important; }
+    .leaflet-popup-tip-container { margin-top: -1px !important; }
+    .leaflet-control-attribution { font-size: 9px !important; }
+
+    /* ── Animated route lines ── */
+    .animated-route { animation: dash .8s linear infinite; }
+    @keyframes dash { to { stroke-dashoffset: -18; } }
+
+    /* ── Team pulse ring ── */
+    @keyframes ring {
+      0%   { transform: translate(-50%,-50%) scale(.7); opacity: 1; }
+      100% { transform: translate(-50%,-50%) scale(1.6); opacity: 0; }
+    }
+
+    /* ── Empty state ── */
+    .empty { padding: 28px 16px; text-align: center; color: var(--text-4); font-size: 12px; }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ═══════════════════════ SIDEBAR ═══════════════════════ -->
+  <aside id="sidebar">
+    <div class="s-header">
+      <div class="logo">V</div>
+      <div class="s-header-text">
+        <div class="s-title">ValeRoute</div>
+        <div class="s-sub">Porto Ponta da Madeira</div>
+      </div>
+      <div class="live-badge"><div class="live-dot"></div>AO VIVO</div>
+    </div>
+
+    <div class="s-tabs">
+      <button class="tab-btn active" data-tab="vehicles">Veículos</button>
+      <button class="tab-btn" data-tab="teams">Equipes</button>
+      <button class="tab-btn" data-tab="routes">Rotas</button>
+      <button class="tab-btn" data-tab="alerts">Alertas</button>
+    </div>
+
+    <div class="s-body">
+      <div class="tab-panel active" id="tab-vehicles"></div>
+      <div class="tab-panel"        id="tab-teams"></div>
+      <div class="tab-panel"        id="tab-routes"></div>
+      <div class="tab-panel"        id="tab-alerts"></div>
+    </div>
+
+    <div class="s-footer">
+      <div class="f-stat"><div class="f-val" id="st-v">6</div><div class="f-lbl">Veículos</div></div>
+      <div class="f-stat"><div class="f-val" id="st-t">4</div><div class="f-lbl">Equipes</div></div>
+      <div class="f-stat"><div class="f-val" id="st-r">2</div><div class="f-lbl">Rotas</div></div>
+      <div class="f-stat"><div class="f-val" id="st-a">1</div><div class="f-lbl">Alertas</div></div>
+    </div>
+  </aside>
+
+  <!-- ═══════════════════════ MAP ═══════════════════════ -->
+  <div id="map-wrap">
+    <div id="map"></div>
+
+    <div class="m-pill m-topbar">
+      <div class="live-dot"></div>
+      OPERAÇÃO EM TEMPO REAL
+      <span style="color:var(--text-4)">·</span>
+      <span style="font-weight:400;color:var(--text-3)">Ponta da Madeira · São Luís MA</span>
+    </div>
+
+    <div class="m-pill m-clock">
+      <div class="clock-time" id="clock">--:--</div>
+      <div class="clock-date" id="cdate">—</div>
+    </div>
+
+    <div class="m-pill m-actions">
+      <button class="act-btn primary" onclick="newRequest()">＋ Nova Solicitação</button>
+      <div class="act-divider"></div>
+      <button class="act-btn" id="sim-btn" onclick="toggleSim()">▶ Simular</button>
+      <button class="act-btn" onclick="fitAll()">⊡ Enquadrar</button>
+      <button class="act-btn" onclick="addInterdict()">⚠ Interdição</button>
+      <div class="act-divider"></div>
+      <button class="act-btn" id="layer-btn" onclick="toggleLayer()">🛰 Satélite</button>
+    </div>
+
+    <!-- Coordinate display -->
+    <div class="m-pill" id="coords" style="bottom:28px;left:14px;border-radius:8px;padding:5px 10px;font-size:10px;font-variant-numeric:tabular-nums;color:var(--text-3);display:none">
+      <span id="coord-text">—</span>
+    </div>
+
+    <div id="toasts"></div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// ════════════════════════════════════════════════
+// DATA
+// ════════════════════════════════════════════════
+
+const CENTER = [-2.5991, -44.3627];
+
+let vehicles = [
+  { id:'VAN-01', type:'van',     emoji:'🚐', driver:'Carlos Mendes',  status:'available', lat:-2.5975, lng:-44.3580 },
+  { id:'VAN-02', type:'van',     emoji:'🚐', driver:'Ana Lima',       status:'en-route',  lat:-2.6012, lng:-44.3635 },
+  { id:'CAM-03', type:'truck',   emoji:'🚛', driver:'João Silva',     status:'en-route',  lat:-2.5958, lng:-44.3658 },
+  { id:'VAN-04', type:'van',     emoji:'🚐', driver:'Pedro Costa',    status:'available', lat:-2.6038, lng:-44.3592 },
+  { id:'SUP-05', type:'support', emoji:'🔧', driver:'Maria Santos',   status:'offline',   lat:-2.5948, lng:-44.3615 },
+  { id:'CAM-06', type:'truck',   emoji:'🚛', driver:'Lucas Ferreira', status:'available', lat:-2.5992, lng:-44.3572 },
+];
+
+let teams = [
+  { id:'EQ-ALPHA', name:'Equipe Alpha', members:4, location:'Pátio Norte',  lat:-2.5968, lng:-44.3648, status:'waiting',  req:'14:23', vehicle:null },
+  { id:'EQ-BETA',  name:'Equipe Beta',  members:3, location:'Cais 07',      lat:-2.6025, lng:-44.3605, status:'assigned', req:'14:18', vehicle:'VAN-02' },
+  { id:'EQ-GAMMA', name:'Equipe Gamma', members:6, location:'Portão Leste', lat:-2.5988, lng:-44.3574, status:'waiting',  req:'14:31', vehicle:null },
+  { id:'EQ-DELTA', name:'Equipe Delta', members:2, location:'Armazém 12',   lat:-2.5996, lng:-44.3665, status:'assigned', req:'14:15', vehicle:'CAM-03' },
+];
+
+let routes = [
+  { id:'RO-001', vid:'VAN-02', tid:'EQ-BETA',  fLat:-2.6012, fLng:-44.3635, tLat:-2.6025, tLng:-44.3605, prog:65, eta:'3 min', color:'#3B82F6' },
+  { id:'RO-002', vid:'CAM-03', tid:'EQ-DELTA', fLat:-2.5958, fLng:-44.3658, tLat:-2.5996, tLng:-44.3665, prog:30, eta:'7 min', color:'#8B5CF6' },
+];
+
+let interdictions = [
+  { id:'INT-01', name:'Manutenção Pátio Sul', lat:-2.6052, lng:-44.3622, radius:200, reason:'Pavimentação programada', since:'13:00', until:'17:00' },
+];
+
+// ════════════════════════════════════════════════
+// MAP INIT
+// ════════════════════════════════════════════════
+
+const map = L.map('map', { center: CENTER, zoom: 14, zoomControl: false });
+
+const tileLayers = {
+  light: L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; <a href="https://openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    subdomains: 'abcd', maxZoom: 20,
+  }),
+  satellite: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    attribution: '&copy; <a href="https://www.esri.com">Esri</a> — Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP',
+    maxZoom: 20,
+  }),
+  labels: L.tileLayer('https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png', {
+    subdomains: 'abcd', maxZoom: 20,
+  }),
+};
+let activeLayer = 'light';
+tileLayers.light.addTo(map);
+
+L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+// ════════════════════════════════════════════════
+// MARKERS
+// ════════════════════════════════════════════════
+
+const vMarkers = {};
+const tMarkers = {};
+const rLines   = {};
+
+const SCOLOR = { available:'#22C55E', 'en-route':'#F59E0B', offline:'#9CA3AF' };
+
+function vIcon(v) {
+  const c = SCOLOR[v.status];
+  return L.divIcon({
+    className: '',
+    iconSize: [36, 43], iconAnchor: [18, 43],
+    html: `<div style="display:flex;flex-direction:column;align-items:center">
+      <div style="width:34px;height:34px;border-radius:9px;background:${c};display:flex;align-items:center;justify-content:center;font-size:16px;box-shadow:0 2px 8px rgba(0,0,0,.18),0 0 0 2px #fff">${v.emoji}</div>
+      <div style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:5px solid ${c};margin-top:-1px"></div>
+    </div>`,
+  });
+}
+
+function tIcon(t) {
+  const c = t.status === 'waiting' ? '#3B82F6' : '#22C55E';
+  const pulse = t.status === 'waiting'
+    ? `<div style="position:absolute;top:50%;left:50%;width:44px;height:44px;border-radius:50%;border:2px solid ${c};animation:ring 2s infinite;z-index:0"></div>`
+    : '';
+  return L.divIcon({
+    className: '',
+    iconSize: [34, 43], iconAnchor: [17, 43],
+    html: `<style>@keyframes ring{0%{transform:translate(-50%,-50%) scale(.7);opacity:1}100%{transform:translate(-50%,-50%) scale(1.6);opacity:0}}</style>
+    <div style="position:relative;display:flex;flex-direction:column;align-items:center;width:34px">
+      ${pulse}
+      <div style="position:relative;z-index:1;width:32px;height:32px;border-radius:50%;background:${c};display:flex;align-items:center;justify-content:center;font-size:14px;box-shadow:0 2px 8px rgba(0,0,0,.15),0 0 0 2px #fff">👷</div>
+      <div style="position:relative;z-index:1;width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:5px solid ${c};margin-top:-1px"></div>
+    </div>`,
+  });
+}
+
+function popupV(v) {
+  return `<div style="font-family:system-ui;min-width:156px">
+    <div style="font-weight:700;font-size:14px;margin-bottom:5px">${v.id}</div>
+    <div style="font-size:12px;color:#71717A">Motorista: ${v.driver}</div>
+    <div style="font-size:12px;color:#71717A">Tipo: ${v.type === 'van' ? 'Van' : v.type === 'truck' ? 'Caminhão' : 'Suporte'}</div>
+    <div style="font-size:12px;color:#71717A">Status: ${v.status === 'available' ? '🟢 Disponível' : v.status === 'en-route' ? '🟡 Em rota' : '⚫ Offline'}</div>
+  </div>`;
+}
+
+function popupT(t) {
+  return `<div style="font-family:system-ui;min-width:156px">
+    <div style="font-weight:700;font-size:14px;margin-bottom:5px">${t.name}</div>
+    <div style="font-size:12px;color:#71717A">Local: ${t.location}</div>
+    <div style="font-size:12px;color:#71717A">Membros: ${t.members}</div>
+    <div style="font-size:12px;color:#71717A">Solicitado às ${t.req}</div>
+    <div style="font-size:12px;margin-top:4px;color:${t.vehicle ? '#15803D' : '#1D4ED8'}">
+      ${t.vehicle ? `✓ ${t.vehicle} a caminho` : '⏳ Aguardando veículo'}
+    </div>
+  </div>`;
+}
+
+function mountV(v) {
+  const m = L.marker([v.lat, v.lng], { icon: vIcon(v), draggable: true }).addTo(map);
+  m.bindPopup(popupV(v));
+  m.on('click', () => highlightSidebarRow(v.id));
+  m.on('dragend', e => {
+    const p = e.target.getLatLng();
+    v.lat = p.lat; v.lng = p.lng;
+    m.setPopupContent(popupV(v));
+    const r = routes.find(x => x.vid === v.id);
+    if (r && rLines[r.id]) rLines[r.id].setLatLngs([[v.lat, v.lng],[r.tLat, r.tLng]]);
+    toast(`${v.id} reposicionado`, `${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}`);
+  });
+  vMarkers[v.id] = m;
+}
+
+function mountT(t) {
+  const m = L.marker([t.lat, t.lng], { icon: tIcon(t), draggable: true }).addTo(map);
+  m.bindPopup(popupT(t));
+  m.on('click', () => highlightSidebarRow(t.id));
+  m.on('dragend', e => {
+    const p = e.target.getLatLng();
+    t.lat = p.lat; t.lng = p.lng;
+    m.setPopupContent(popupT(t));
+    toast(`${t.name} reposicionada`, `${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}`);
+  });
+  tMarkers[t.id] = m;
+}
+
+function mountRoute(r) {
+  const line = L.polyline([[r.fLat, r.fLng],[r.tLat, r.tLng]], {
+    color: r.color, weight: 3, opacity: .85,
+    dashArray: '10 8', className: 'animated-route',
+  }).addTo(map);
+  rLines[r.id] = line;
+}
+
+function mountInterdict(i) {
+  L.circle([i.lat, i.lng], {
+    radius: i.radius,
+    color: '#EF4444', fillColor: '#EF4444',
+    fillOpacity: .1, weight: 2, dashArray: '6 4',
+  }).addTo(map).bindPopup(
+    `<div style="font-family:system-ui"><div style="font-weight:700;color:#DC2626">⚠ ${i.name}</div>
+    <div style="font-size:12px;color:#71717A;margin-top:3px">${i.reason}</div>
+    <div style="font-size:12px;color:#71717A">${i.since} – ${i.until}</div></div>`
+  );
+}
+
+vehicles.forEach(mountV);
+teams.forEach(mountT);
+routes.forEach(mountRoute);
+interdictions.forEach(mountInterdict);
+
+// ════════════════════════════════════════════════
+// SIDEBAR RENDER
+// ════════════════════════════════════════════════
+
+function renderVehicles() {
+  const avail = vehicles.filter(v => v.status === 'available');
+  const enrt  = vehicles.filter(v => v.status === 'en-route');
+  const off   = vehicles.filter(v => v.status === 'offline');
+  let h = '';
+  if (avail.length) h += `<div class="section-lbl">Disponíveis (${avail.length})</div>` + avail.map(vRow).join('');
+  if (enrt.length)  h += `<div class="section-lbl">Em Rota (${enrt.length})</div>`       + enrt.map(vRow).join('');
+  if (off.length)   h += `<div class="section-lbl">Offline (${off.length})</div>`        + off.map(vRow).join('');
+  const panel = document.getElementById('tab-vehicles');
+  panel.innerHTML = h;
+  panel.querySelectorAll('.item-row').forEach(r => r.addEventListener('click', () => flyToVehicle(r.dataset.id)));
+}
+
+function vRow(v) {
+  const ic = v.type === 'van' ? 'i-van' : v.type === 'truck' ? 'i-truck' : 'i-support';
+  const bc = v.status === 'available' ? 'b-available' : v.status === 'en-route' ? 'b-route' : 'b-offline';
+  const bl = v.status === 'available' ? 'Disponível' : v.status === 'en-route' ? 'Em Rota' : 'Offline';
+  return `<div class="item-row" data-id="${v.id}">
+    <div class="item-icon ${ic}">${v.emoji}</div>
+    <div class="item-body"><div class="item-title">${v.id}</div><div class="item-sub">${v.driver}</div></div>
+    <div class="item-right"><span class="badge ${bc}">${bl}</span></div>
+  </div>`;
+}
+
+function renderTeams() {
+  const wait = teams.filter(t => t.status === 'waiting');
+  const asgn = teams.filter(t => t.status === 'assigned');
+  let h = '';
+  if (wait.length) h += `<div class="section-lbl">Aguardando (${wait.length})</div>` + wait.map(tRow).join('');
+  if (asgn.length) h += `<div class="section-lbl">Em Atendimento (${asgn.length})</div>` + asgn.map(tRow).join('');
+  const panel = document.getElementById('tab-teams');
+  panel.innerHTML = h || '<div class="empty">Nenhuma equipe registrada</div>';
+  panel.querySelectorAll('.item-row').forEach(r => r.addEventListener('click', () => flyToTeam(r.dataset.id)));
+}
+
+function tRow(t) {
+  const bc = t.status === 'waiting' ? 'b-waiting' : 'b-assigned';
+  const bl = t.status === 'waiting' ? 'Aguardando' : 'Designado';
+  const sub = t.vehicle ? `${t.location} · ${t.vehicle}` : `${t.location} · ${t.members} membros`;
+  return `<div class="item-row" data-id="${t.id}">
+    <div class="item-icon i-team">👷</div>
+    <div class="item-body"><div class="item-title">${t.name}</div><div class="item-sub">${sub}</div></div>
+    <div class="item-right"><span class="badge ${bc}">${bl}</span></div>
+  </div>`;
+}
+
+function renderRoutes() {
+  const panel = document.getElementById('tab-routes');
+  if (!routes.length) { panel.innerHTML = '<div class="empty">Nenhuma rota ativa</div>'; return; }
+  let h = `<div class="section-lbl">Rotas Ativas (${routes.length})</div>`;
+  h += routes.map(r => {
+    const team = teams.find(t => t.id === r.tid);
+    return `<div class="route-card">
+      <div class="rc-header"><span class="rc-id">${r.id}</span><span class="rc-eta">ETA ${r.eta}</span></div>
+      <div class="rc-parties">
+        <span class="rc-v">${r.vid}</span><span class="rc-arrow">→</span>
+        <span class="rc-t">${team ? team.location : r.tid}</span>
+      </div>
+      <div class="progress-track"><div class="progress-fill" style="width:${r.prog}%"></div></div>
+      <div class="progress-foot"><span>${r.prog}% concluído</span><span>${r.tid}</span></div>
+    </div>`;
+  }).join('');
+  panel.innerHTML = h;
+}
+
+function renderAlerts() {
+  const panel = document.getElementById('tab-alerts');
+  if (!interdictions.length) { panel.innerHTML = '<div class="empty">Nenhuma interdição ativa</div>'; return; }
+  let h = `<div class="section-lbl">Interdições Ativas (${interdictions.length})</div>`;
+  h += interdictions.map(i => `<div class="interd-card">
+    <div class="interd-name">⚠ ${i.name}</div>
+    <div class="interd-meta">${i.reason}</div>
+    <div class="interd-time">Das ${i.since} às ${i.until}</div>
+  </div>`).join('');
+  panel.innerHTML = h;
+}
+
+function updateStats() {
+  document.getElementById('st-v').textContent = vehicles.length;
+  document.getElementById('st-t').textContent = teams.length;
+  document.getElementById('st-r').textContent = routes.length;
+  document.getElementById('st-a').textContent = interdictions.length;
+}
+
+function renderAll() {
+  renderVehicles(); renderTeams(); renderRoutes(); renderAlerts(); updateStats();
+}
+
+// ════════════════════════════════════════════════
+// TABS
+// ════════════════════════════════════════════════
+
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+  });
+});
+
+// ════════════════════════════════════════════════
+// FLY-TO
+// ════════════════════════════════════════════════
+
+// ════════════════════════════════════════════════
+// LAYER TOGGLE
+// ════════════════════════════════════════════════
+
+function toggleLayer() {
+  const btn = document.getElementById('layer-btn');
+  if (activeLayer === 'light') {
+    map.removeLayer(tileLayers.light);
+    tileLayers.satellite.addTo(map);
+    tileLayers.labels.addTo(map);
+    activeLayer = 'satellite';
+    btn.textContent = '🗺 Mapa';
+  } else {
+    map.removeLayer(tileLayers.satellite);
+    map.removeLayer(tileLayers.labels);
+    tileLayers.light.addTo(map);
+    activeLayer = 'light';
+    btn.textContent = '🛰 Satélite';
+  }
+}
+
+// Coordinate display on mousemove
+map.on('mousemove', e => {
+  const el = document.getElementById('coords');
+  el.style.display = 'block';
+  document.getElementById('coord-text').textContent =
+    `${e.latlng.lat.toFixed(5)}°S  ${Math.abs(e.latlng.lng).toFixed(5)}°W`;
+});
+map.on('mouseout', () => { document.getElementById('coords').style.display = 'none'; });
+
+function flyToVehicle(id) {
+  const v = vehicles.find(x => x.id === id);
+  if (v && vMarkers[id]) { map.flyTo([v.lat, v.lng], 17, { duration: .8 }); setTimeout(() => vMarkers[id].openPopup(), 900); }
+}
+function flyToTeam(id) {
+  const t = teams.find(x => x.id === id);
+  if (t && tMarkers[id]) { map.flyTo([t.lat, t.lng], 17, { duration: .8 }); setTimeout(() => tMarkers[id].openPopup(), 900); }
+}
+function highlightSidebarRow(id) {
+  document.querySelectorAll('.item-row').forEach(r => r.style.background = '');
+  const row = document.querySelector(`[data-id="${id}"]`);
+  if (row) { row.style.background = 'var(--bg-muted)'; row.scrollIntoView({ behavior:'smooth', block:'nearest' }); }
+}
+function fitAll() {
+  const pts = [...vehicles.map(v => [v.lat, v.lng]), ...teams.map(t => [t.lat, t.lng])];
+  if (pts.length) map.fitBounds(L.latLngBounds(pts), { padding: [60, 60] });
+}
+
+// ════════════════════════════════════════════════
+// CLOCK
+// ════════════════════════════════════════════════
+
+const MONTHS = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+const WDAYS  = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+
+function tick() {
+  const n = new Date();
+  document.getElementById('clock').textContent =
+    String(n.getHours()).padStart(2,'0') + ':' + String(n.getMinutes()).padStart(2,'0');
+  document.getElementById('cdate').textContent =
+    `${WDAYS[n.getDay()]}, ${n.getDate()} ${MONTHS[n.getMonth()]}`;
+}
+tick(); setInterval(tick, 1000);
+
+// ════════════════════════════════════════════════
+// TOASTS
+// ════════════════════════════════════════════════
+
+function toast(title, msg, ms = 4000) {
+  const c = document.getElementById('toasts');
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.innerHTML = `<div class="t-title">${title}</div><div class="t-msg">${msg}</div>`;
+  c.appendChild(el);
+  setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 200); }, ms);
+}
+
+// ════════════════════════════════════════════════
+// SIMULATION
+// ════════════════════════════════════════════════
+
+let simOn = false, simTimer = null;
+
+function toggleSim() {
+  simOn = !simOn;
+  document.getElementById('sim-btn').textContent = simOn ? '⏸ Pausar' : '▶ Simular';
+  if (simOn) {
+    toast('Simulação iniciada', 'Veículos em rota sendo movimentados.');
+    simTimer = setInterval(simTick, 1200);
+  } else {
+    clearInterval(simTimer);
+    toast('Simulação pausada', 'Movimentação suspensa.');
+  }
+}
+
+function simTick() {
+  routes.forEach(r => {
+    const v = vehicles.find(x => x.id === r.vid);
+    if (!v) return;
+    r.prog = Math.min(100, r.prog + 3);
+    // Interpolate vehicle position along route
+    const t = r.prog / 100;
+    v.lat = r.fLat + (r.tLat - r.fLat) * t;
+    v.lng = r.fLng + (r.tLng - r.fLng) * t;
+    if (vMarkers[r.vid]) vMarkers[r.vid].setLatLng([v.lat, v.lng]);
+
+    if (r.prog >= 100) {
+      const team = teams.find(x => x.id === r.tid);
+      toast(`${v.id} chegou!`, `${v.id} chegou a ${team ? team.location : r.tid}.`);
+      if (team) { team.status = 'in-transit'; team.vehicle = null; }
+      v.status = 'available';
+      vMarkers[v.id].setIcon(vIcon(v));
+      if (rLines[r.id]) { map.removeLayer(rLines[r.id]); delete rLines[r.id]; }
+    }
+  });
+  routes = routes.filter(r => r.prog < 100);
+  renderAll();
+}
+
+// ════════════════════════════════════════════════
+// NEW REQUEST
+// ════════════════════════════════════════════════
+
+let teamSeq = 5;
+const TEAM_NAMES = ['Equipe Echo','Equipe Foxtrot','Equipe Golf','Equipe Hotel','Equipe India'];
+const LOCS = ['Berço 09','Pátio Leste','Portão Norte','Torre de Controle','Oficina Central','Armazém 03','Cais 11'];
+
+function newRequest() {
+  const name = TEAM_NAMES[Math.floor(Math.random() * TEAM_NAMES.length)];
+  const loc  = LOCS[Math.floor(Math.random() * LOCS.length)];
+  const lat  = CENTER[0] + (Math.random() - .5) * .016;
+  const lng  = CENTER[1] + (Math.random() - .5) * .016;
+  const id   = `EQ-${String(teamSeq++).padStart(3,'0')}`;
+  const now  = new Date();
+  const req  = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+  const t    = { id, name, members: Math.ceil(Math.random() * 5) + 1, location: loc, lat, lng, status:'waiting', req, vehicle:null };
+
+  teams.push(t);
+  mountT(t);
+  toast('Nova solicitação', `${name} pediu transporte — ${loc}.`);
+
+  const free = vehicles.find(v => v.status === 'available');
+  if (free) setTimeout(() => autoAssign(free, t), 1800);
+
+  renderAll();
+  document.querySelector('[data-tab="teams"]').click();
+}
+
+function autoAssign(v, t) {
+  const COLORS = ['#3B82F6','#8B5CF6','#10B981','#F59E0B','#EC4899'];
+  const rid = `RO-${String(routes.length + 1).padStart(3,'0')}`;
+  const r = {
+    id: rid, vid: v.id, tid: t.id,
+    fLat: v.lat, fLng: v.lng, tLat: t.lat, tLng: t.lng,
+    prog: 0,
+    eta: `${Math.ceil(Math.random() * 8) + 2} min`,
+    color: COLORS[routes.length % COLORS.length],
+  };
+  v.status = 'en-route';
+  t.status = 'assigned';
+  t.vehicle = v.id;
+  routes.push(r);
+  mountRoute(r);
+  vMarkers[v.id].setIcon(vIcon(v));
+  tMarkers[t.id].setIcon(tIcon(t));
+  tMarkers[t.id].setPopupContent(popupT(t));
+  toast('Match automático', `${v.id} designado para ${t.name}.`);
+  renderAll();
+}
+
+// ════════════════════════════════════════════════
+// ADD INTERDICTION
+// ════════════════════════════════════════════════
+
+let intSeq = 2;
+const INT_NAMES = ['Inspeção de Segurança','Obra em Andamento','Operação de Carga','Manutenção Elétrica','Vistoria de Equipamentos'];
+
+function addInterdict() {
+  const c    = map.getCenter();
+  const name = INT_NAMES[Math.floor(Math.random() * INT_NAMES.length)];
+  const now  = new Date();
+  const since = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+  const until = `${String(now.getHours() + 2).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+  const i = { id:`INT-${String(intSeq++).padStart(2,'0')}`, name, lat:c.lat, lng:c.lng, radius:160, reason:name, since, until };
+  interdictions.push(i);
+  mountInterdict(i);
+  toast('Interdição adicionada', `${name} — vigente das ${since} às ${until}.`);
+  renderAll();
+  document.querySelector('[data-tab="alerts"]').click();
+}
+
+// ════════════════════════════════════════════════
+// BOOT
+// ════════════════════════════════════════════════
+
+renderAll();
+setTimeout(() => toast('Sistema operacional', 'Rastreamento em tempo real ativo.'), 600);
+setTimeout(() => toast('Interdição ativa', 'Pátio Sul interditado para manutenção.'), 2400);
+setTimeout(() => toast('VAN-01 disponível', 'Veículo aguardando nova solicitação.'), 4200);
+</script>
+</body>
+</html>
