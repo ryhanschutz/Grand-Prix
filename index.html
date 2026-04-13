@@ -389,7 +389,7 @@
 // DATA
 // ════════════════════════════════════════════════
 
-const CENTER = [-2.5600, -44.3700];
+const CENTER = [-2.5626, -44.3708];
 
 let vehicles = [
   { id:'VAN-01', type:'van',     emoji:'🚐', driver:'Carlos Mendes',  status:'available', lat:-2.5975, lng:-44.3580 },
@@ -416,6 +416,18 @@ let interdictions = [
   { id:'INT-01', name:'Manutenção Pátio Sul', lat:-2.6052, lng:-44.3622, radius:200, reason:'Pavimentação programada', since:'13:00', until:'17:00' },
 ];
 
+let keyPoints = [
+  { id:'KP-PI4', name:'Píer 4', lat:-2.5516093787565404, lng:-44.37886196991344, label:'4' },
+  { id:'KP-PI3', name:'Píer 3', lat:-2.5623676208640966, lng:-44.379214049076126, label:'3' },
+  { id:'KP-PI1', name:'Píer 1', lat:-2.5660185044179937, lng:-44.378238787848936, label:'1' },
+  { id:'KP-PTM', name:'Ponta da Madeira', lat:-2.565083133064946, lng:-44.37528724511482, label:'PM' },
+  { id:'KP-P4', name:'Portaria do Píer 4', lat:-2.559505434070152, lng:-44.36466766976164, label:'P4' },
+  { id:'KP-P3', name:'Portaria do Píer 3', lat:-2.5646636502314757, lng:-44.37662488789419, label:'P3' },
+  { id:'KP-P1', name:'Portaria do Píer 1', lat:-2.5657101572383048, lng:-44.37705623441668, label:'P1' },
+  { id:'KP-SE', name:'Subestação SE-3150K-01', lat:-2.5603999155329635, lng:-44.36282647717872, label:'SE' },
+  { id:'KP-VV', name:'Virador de Vagões', lat:-2.5680293295264036, lng:-44.34465188856429, label:'VV' },
+];
+
 // ════════════════════════════════════════════════
 // MAP INIT
 // ════════════════════════════════════════════════
@@ -423,9 +435,9 @@ let interdictions = [
 const map = L.map('map', { center: CENTER, zoom: 14, zoomControl: false });
 
 const tileLayers = {
-  light: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; <a href="https://openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-    subdomains: 'abc', maxZoom: 20,
+  light: L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; <a href="https://openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    subdomains: 'abcd', maxZoom: 20,
   }),
   satellite: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
     attribution: '&copy; <a href="https://www.esri.com">Esri</a> — Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP',
@@ -447,6 +459,7 @@ L.control.zoom({ position: 'bottomright' }).addTo(map);
 const vMarkers = {};
 const tMarkers = {};
 const rLines   = {};
+const poiMarkers = {};
 
 const SCOLOR = { available:'#22C55E', 'en-route':'#F59E0B', offline:'#9CA3AF' };
 
@@ -536,6 +549,30 @@ function mountRoute(r) {
   rLines[r.id] = line;
 }
 
+function poiIcon(point) {
+  return L.divIcon({
+    className: '',
+    iconSize: [34, 42], iconAnchor: [17, 42],
+    html: `<div style="display:flex;flex-direction:column;align-items:center">
+      <div style="width:30px;height:30px;border-radius:10px;background:#1D4ED8;color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;box-shadow:0 2px 10px rgba(0,0,0,.16)">${point.label}</div>
+      <div style="width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:7px solid #1D4ED8;margin-top:-1px"></div>
+    </div>`,
+  });
+}
+
+function popupPOI(point) {
+  return `<div style="font-family:system-ui;min-width:160px">
+    <div style="font-weight:700;font-size:14px;margin-bottom:5px">${point.name}</div>
+    <div style="font-size:12px;color:#71717A">${point.lat.toFixed(6)}, ${point.lng.toFixed(6)}</div>
+  </div>`;
+}
+
+function mountPOI(point) {
+  const m = L.marker([point.lat, point.lng], { icon: poiIcon(point) }).addTo(map);
+  m.bindPopup(popupPOI(point));
+  poiMarkers[point.id] = m;
+}
+
 function mountInterdict(i) {
   L.circle([i.lat, i.lng], {
     radius: i.radius,
@@ -552,6 +589,7 @@ vehicles.forEach(mountV);
 teams.forEach(mountT);
 routes.forEach(mountRoute);
 interdictions.forEach(mountInterdict);
+keyPoints.forEach(mountPOI);
 
 // ════════════════════════════════════════════════
 // SIDEBAR RENDER
@@ -706,7 +744,11 @@ function highlightSidebarRow(id) {
   if (row) { row.style.background = 'var(--bg-muted)'; row.scrollIntoView({ behavior:'smooth', block:'nearest' }); }
 }
 function fitAll() {
-  const pts = [...vehicles.map(v => [v.lat, v.lng]), ...teams.map(t => [t.lat, t.lng])];
+  const pts = [
+    ...vehicles.map(v => [v.lat, v.lng]),
+    ...teams.map(t => [t.lat, t.lng]),
+    ...keyPoints.map(k => [k.lat, k.lng]),
+  ];
   if (pts.length) map.fitBounds(L.latLngBounds(pts), { padding: [60, 60] });
 }
 
