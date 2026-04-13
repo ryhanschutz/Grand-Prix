@@ -69,12 +69,16 @@
       flex-shrink: 0;
     }
     .logo {
-      width: 30px; height: 30px;
-      background: #0047BB;
-      border-radius: 7px;
+      width: 38px; height: 38px;
+      background: transparent;
+      border-radius: 10px;
       display: flex; align-items: center; justify-content: center;
-      color: #fff; font-weight: 800; font-size: 13px;
-      letter-spacing: -0.5px; flex-shrink: 0;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+    .logo img {
+      width: 100%; height: 100%; object-fit: contain;
+      display: block;
     }
     .s-header-text { flex: 1; line-height: 1; }
     .s-title { font-size: 14px; font-weight: 700; }
@@ -238,15 +242,16 @@
     .act-btn {
       padding: 7px 13px;
       font-size: 11px; font-weight: 600;
-      color: var(--text-3); background: transparent;
-      border: none; border-radius: 9px;
+      color: var(--text-2); background: #ffffff;
+      border: 1px solid var(--border);
+      border-radius: 9px;
       cursor: pointer; font-family: var(--font);
-      transition: background .1s, color .1s;
+      transition: background .1s, color .1s, border-color .1s;
       white-space: nowrap;
     }
-    .act-btn:hover { background: var(--bg-muted); color: var(--text); }
-    .act-btn.primary { background: var(--text); color: #fff; }
-    .act-btn.primary:hover { background: #27272A; }
+    .act-btn:hover { background: var(--bg-muted); }
+    .act-btn.primary { background: #ffffff; border-color: var(--blue); color: var(--blue); }
+    .act-btn.primary:hover { background: #EFF6FF; }
     .act-divider { width: 1px; height: 20px; background: var(--border); margin: 0 3px; }
 
     /* ── Toasts ── */
@@ -292,6 +297,7 @@
     .leaflet-popup-content { margin: 12px 14px !important; }
     .leaflet-popup-tip-container { margin-top: -1px !important; }
     .leaflet-control-attribution { font-size: 9px !important; }
+    .leaflet-pane .leaflet-tile { filter: saturate(0.2) brightness(1.06); }
 
     /* ── Animated route lines ── */
     .animated-route { animation: dash .8s linear infinite; }
@@ -309,11 +315,10 @@
 </head>
 <body>
 <div id="app">
-
   <!-- ═══════════════════════ SIDEBAR ═══════════════════════ -->
   <aside id="sidebar">
     <div class="s-header">
-      <div class="logo">V</div>
+      <div class="logo"><img src="logo_no_background.png" alt="ValeRoute logo"></div>
       <div class="s-header-text">
         <div class="s-title">ValeRoute</div>
         <div class="s-sub">Porto Ponta da Madeira</div>
@@ -384,7 +389,7 @@
 // DATA
 // ════════════════════════════════════════════════
 
-const CENTER = [-2.5991, -44.3627];
+const CENTER = [-2.5600, -44.3700];
 
 let vehicles = [
   { id:'VAN-01', type:'van',     emoji:'🚐', driver:'Carlos Mendes',  status:'available', lat:-2.5975, lng:-44.3580 },
@@ -418,9 +423,9 @@ let interdictions = [
 const map = L.map('map', { center: CENTER, zoom: 14, zoomControl: false });
 
 const tileLayers = {
-  light: L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-    attribution: '&copy; <a href="https://openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
-    subdomains: 'abcd', maxZoom: 20,
+  light: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; <a href="https://openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    subdomains: 'abc', maxZoom: 20,
   }),
   satellite: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
     attribution: '&copy; <a href="https://www.esri.com">Esri</a> — Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP',
