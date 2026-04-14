@@ -252,6 +252,7 @@ tileLayers.light.addTo(map);
 L.control.zoom({ position: 'bottomright' }).addTo(map);
 const routeLayer = L.layerGroup().addTo(map);
 const interdictionLayer = L.layerGroup().addTo(map);
+const interdictMarkers = {};
 let selectedVehicleId = null;
 let selectedDestinationId = null;
 let selectedRouteInfo = null;
@@ -397,6 +398,29 @@ function drawBlockedEdge(edge) {
   L.polyline([[a.lat, a.lng], [b.lat, b.lng]], {
     color: '#DC2626', weight: 4, opacity: .8, dashArray: '8 6', interactive: false,
   }).addTo(interdictionLayer);
+}
+
+function refreshBlockedEdges() {
+  interdictionLayer.clearLayers();
+  RoutingEngine.edges.filter(e => e.isBlocked).forEach(drawBlockedEdge);
+}
+
+function removeInterdict(id) {
+  const interdict = interdictions.find(i => i.id === id);
+  if (!interdict) return;
+  if (interdictMarkers[id]) {
+    map.removeLayer(interdictMarkers[id]);
+    delete interdictMarkers[id];
+  }
+  if (interdict.edgeId) {
+    RoutingEngine.unblockEdge(interdict.edgeId);
+  }
+  interdictions = interdictions.filter(i => i.id !== id);
+  refreshBlockedEdges();
+  rerouteActivePaths();
+  if (selectedVehicleId && selectedDestinationId) calculateSelectedRoute();
+  renderAll();
+  toast('Interdição removida', `${interdict.name} foi liberada e as rotas foram atualizadas.`);
 }
 
 function routeIntersectsBlockedEdge(coords) {
@@ -838,15 +862,17 @@ function mountPOI(point) {
 }
 
 function mountInterdict(i) {
-  L.circle([i.lat, i.lng], {
+  const circle = L.circle([i.lat, i.lng], {
     radius: i.radius,
     color: '#EF4444', fillColor: '#EF4444',
     fillOpacity: .1, weight: 2, dashArray: '6 4',
   }).addTo(map).bindPopup(
     `<div style="font-family:system-ui"><div style="font-weight:700;color:#DC2626">⚠ ${i.name}</div>
     <div style="font-size:12px;color:#71717A;margin-top:3px">${i.reason}</div>
-    <div style="font-size:12px;color:#71717A">${i.since} – ${i.until}</div></div>`
+    <div style="font-size:12px;color:#71717A">${i.since} – ${i.until}</div>
+    <button onclick="removeInterdict('${i.id}')" style="margin-top:8px;padding:6px 10px;background:#DC2626;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:11px;">Remover</button></div>`
   );
+  interdictMarkers[i.id] = circle;
 }
 
 vehicles.forEach(mountV);
@@ -936,6 +962,7 @@ function renderAlerts() {
     <div class="interd-name">⚠ ${i.name}</div>
     <div class="interd-meta">${i.reason}</div>
     <div class="interd-time">Das ${i.since} às ${i.until}</div>
+    <button class="interd-remove" onclick="removeInterdict('${i.id}')">Remover</button>
   </div>`).join('');
   panel.innerHTML = h;
 }
@@ -1196,6 +1223,7 @@ function placeInterdictAt(latlng) {
   const edge = RoutingEngine.findNearestEdge(latlng.lat, latlng.lng);
   if (edge) {
     RoutingEngine.blockEdge(edge.id);
+    i.edgeId = edge.id;
     drawBlockedEdge(edge);
     toast('Via bloqueada', `Trecho ${edge.id} agora está interditado.`);
     rerouteActivePaths();
