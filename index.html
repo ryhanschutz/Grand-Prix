@@ -474,12 +474,12 @@
 const CENTER = [-2.5626, -44.3708];
 
 let vehicles = [
-  { id:'VAN-01', tag:'VR-101', type:'van',     emoji:'🚐', driver:'Carlos Mendes',  status:'available', lat:-2.5660, lng:-44.3783, image:null },
-  { id:'VAN-02', tag:'VR-102', type:'van',     emoji:'🚐', driver:'Ana Lima',       status:'available', lat:-2.5624, lng:-44.3792, image:null },
-  { id:'CAM-03', tag:'VR-201', type:'truck',   emoji:'🚛', driver:'João Silva',     status:'en-route',  lat:-2.5517, lng:-44.3788, image:null, modelUrl:'truck.glb' },
-  { id:'VAN-04', tag:'VR-103', type:'van',     emoji:'🚐', driver:'Pedro Costa',    status:'available', lat:-2.5597, lng:-44.3647, image:null },
+  { id:'VAN-01', tag:'VR-101', type:'van',     emoji:'🚐', driver:'Carlos Mendes',  status:'available', lat:-2.5665, lng:-44.3735, image:null },
+  { id:'VAN-02', tag:'VR-102', type:'van',     emoji:'🚐', driver:'Ana Lima',       status:'available', lat:-2.5648, lng:-44.3722, image:null },
+  { id:'CAM-03', tag:'VR-201', type:'truck',   emoji:'🚛', driver:'João Silva',     status:'en-route',  lat:-2.5676, lng:-44.3698, image:null, modelUrl:'network-device.glb' },
+  { id:'VAN-04', tag:'VR-103', type:'van',     emoji:'🚐', driver:'Pedro Costa',    status:'available', lat:-2.5590, lng:-44.3660, image:null },
   { id:'SUP-05', tag:'VR-301', type:'support', emoji:'🔧', driver:'Maria Santos',   status:'offline',   lat:-2.5604, lng:-44.3628, image:null },
-  { id:'CAM-06', tag:'VR-202', type:'truck',   emoji:'🚛', driver:'Lucas Ferreira', status:'available', lat:-2.5657, lng:-44.3771, image:null, modelUrl:'truck.glb' },
+  { id:'CAM-06', tag:'VR-202', type:'truck',   emoji:'🚛', driver:'Lucas Ferreira', status:'available', lat:-2.5657, lng:-44.3741, image:null, modelUrl:'network-device.glb' },
 ];
 
 let teams = [
@@ -609,13 +609,12 @@ const RoutingEngine = {
   findNearestEdge(lat, lng) {
     let best = null;
     let bestDist = Infinity;
+    const point = { lat, lng };
     for (const edge of this.edges) {
       const a = this.nodesMap[edge.source];
       const b = this.nodesMap[edge.target];
-      const d1 = haversine({ lat, lng }, a);
-      const d2 = haversine({ lat, lng }, b);
-      const current = Math.min(d1, d2);
-      if (current < bestDist) { bestDist = current; best = edge; }
+      const dist = pointToSegmentDistance(point, a, b);
+      if (dist < bestDist) { bestDist = dist; best = edge; }
     }
     return best;
   },
@@ -720,12 +719,15 @@ tileLayers.light.addTo(map);
 
 L.control.zoom({ position: 'bottomright' }).addTo(map);
 const routeLayer = L.layerGroup().addTo(map);
+const interdictionLayer = L.layerGroup().addTo(map);
 let selectedVehicleId = null;
 let selectedDestinationId = null;
 let selectedRouteInfo = null;
 let selectedRouteCoords = null;
 let selectedRouteProgress = 0;
 let interdictMode = false;
+const networkViewerState = { container: null, scene: null, camera: null, renderer: null, model: null, animating: false };
+const truckViewerState = { container: null, scene: null, camera: null, renderer: null, model: null, animating: false };
 
 map.on('click', e => {
   if (!interdictMode) return;
@@ -856,10 +858,19 @@ function pointToSegmentDistance(point, a, b) {
   return haversine(point, proj);
 }
 
+function drawBlockedEdge(edge) {
+  const a = RoutingEngine.nodesMap[edge.source];
+  const b = RoutingEngine.nodesMap[edge.target];
+  if (!a || !b) return;
+  L.polyline([[a.lat, a.lng], [b.lat, b.lng]], {
+    color: '#DC2626', weight: 4, opacity: .8, dashArray: '8 6', interactive: false,
+  }).addTo(interdictionLayer);
+}
+
 function routeIntersectsBlockedEdge(coords) {
   const blockedEdges = RoutingEngine.edges.filter(e => e.isBlocked);
   if (!blockedEdges.length) return false;
-  const points = coords.map(c => ({ lat: c[1], lng: c[0] }));
+  const points = coords.map(c => ({ lat: c[0], lng: c[1] }));
   for (const edge of blockedEdges) {
     const a = RoutingEngine.nodesMap[edge.source];
     const b = RoutingEngine.nodesMap[edge.target];
@@ -966,11 +977,17 @@ function initNetworkViewer() {
   floor.position.y = -0.02;
   networkViewerState.scene.add(floor);
 
-  loadNetworkModel('logoed+device+3d+model.glb');
+  loadNetworkModel('network-device.glb');
   if (!networkViewerState.animating) {
     networkViewerState.animating = true;
     requestAnimationFrame(animateNetworkViewer);
   }
+  window.addEventListener('resize', () => {
+    if (!networkViewerState.renderer || !networkViewerState.camera || !networkViewerState.container) return;
+    networkViewerState.camera.aspect = networkViewerState.container.clientWidth / networkViewerState.container.clientHeight;
+    networkViewerState.camera.updateProjectionMatrix();
+    networkViewerState.renderer.setSize(networkViewerState.container.clientWidth, networkViewerState.container.clientHeight, false);
+  });
 }
 
 function loadNetworkModel(url) {
@@ -996,7 +1013,8 @@ function loadNetworkModel(url) {
     const scale = 2.2 / size;
     networkViewerState.model.scale.setScalar(scale);
     networkViewerState.scene.add(networkViewerState.model);
-  }, undefined, () => {
+  }, undefined, error => {
+    console.error('Falha ao carregar modelo 3D:', error);
     if (networkViewerState.container) {
       networkViewerState.container.innerHTML = '<div style="padding:16px;text-align:center;color:#6B7280;font-size:13px">Falha ao carregar o modelo 3D.</div>';
     }
@@ -1109,8 +1127,11 @@ function loadTruckModel(url) {
     truckViewerState.model.scale.setScalar(scale);
     truckViewerState.scene.add(truckViewerState.model);
     truckViewerState.camera.position.set(0, 1.8, 3.8);
-  }, undefined, () => {
-    truckViewerState.container.innerHTML = '<div style="padding:16px;text-align:center;color:#6B7280;font-size:13px">Falha ao carregar o modelo 3D.</div>';
+  }, undefined, error => {
+    console.error('Falha ao carregar modelo 3D do caminhão:', error);
+    if (truckViewerState.container) {
+      truckViewerState.container.innerHTML = '<div style="padding:16px;text-align:center;color:#6B7280;font-size:13px">Falha ao carregar o modelo 3D.</div>';
+    }
   });
 }
 
@@ -1207,8 +1228,8 @@ async function calculateSelectedRoute() {
     if (localRoute && localRoute.path && localRoute.path.length) {
       coords = RoutingEngine.getPathLatLngs(localRoute.path);
       selectedRouteCoords = coords;
-  selectedRouteProgress = 0;
-  selectedRouteInfo = { distance: localRoute.totalDistance, duration: Math.ceil(localRoute.totalDistance / 12) * 60 };
+      selectedRouteProgress = 0;
+      selectedRouteInfo = { distance: localRoute.totalDistance, duration: Math.ceil(localRoute.totalDistance / 12) * 60 };
       drawRoutingPath(coords, `${vehicle.id} → ${dest.label}`);
       updateSelectionPanel();
       toast('Rota alternativa', 'Rota ajustada para evitar a interdição local.');
@@ -1243,10 +1264,14 @@ function rerouteActivePaths() {
     if (routeData && routeData.path && routeData.path.length) {
       r.path = routeData.path;
       r.coords = RoutingEngine.getPathLatLngs(routeData.path);
+      r.totalDistance = routeData.totalDistance;
       if (rLines[r.id]) rLines[r.id].setLatLngs(r.coords);
+    } else {
+      toast('Rota interrompida', `Não foi possível rerotar ${r.vid} para ${t.name}.`);
+      if (rLines[r.id]) { map.removeLayer(rLines[r.id]); delete rLines[r.id]; }
     }
   });
-  runRoutingDemo();
+  renderAll();
 }
 
 function findTeamRoute(v, t) {
@@ -1598,8 +1623,9 @@ function autoAssign(v, t) {
   const routeData = findTeamRoute(v, t);
   if (routeData) {
     r.path = routeData.path;
+    r.coords = RoutingEngine.getPathLatLngs(routeData.path);
     r.totalDistance = routeData.totalDistance;
-    drawRoutingPath(routeData.path);
+    drawRoutingPath(r.coords);
   }
   routes.push(r);
   mountRoute(r);
@@ -1638,6 +1664,7 @@ function placeInterdictAt(latlng) {
   const edge = RoutingEngine.findNearestEdge(latlng.lat, latlng.lng);
   if (edge) {
     RoutingEngine.blockEdge(edge.id);
+    drawBlockedEdge(edge);
     toast('Via bloqueada', `Trecho ${edge.id} agora está interditado.`);
     rerouteActivePaths();
   }
