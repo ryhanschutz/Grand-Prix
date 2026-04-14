@@ -896,12 +896,18 @@ function removeInterdict(id) {
 function routeIntersectsBlockedEdge(coords) {
   const blockedEdges = RoutingEngine.edges.filter(e => e.isBlocked);
   if (!blockedEdges.length) return false;
-  const points = coords.map(c => ({ lat: c[0], lng: c[1] }));
+  const points = coords.map(c => ({ lat: c[1], lng: c[0] }));
   for (const edge of blockedEdges) {
     const a = RoutingEngine.nodesMap[edge.source];
     const b = RoutingEngine.nodesMap[edge.target];
+    if (!a || !b) continue;
     for (const pt of points) {
       if (pointToSegmentDistance(pt, a, b) < 60) return true;
+    }
+    for (let i = 1; i < points.length; i++) {
+      const segmentStart = points[i - 1];
+      const segmentEnd = points[i];
+      if (pointToSegmentDistance(a, segmentStart, segmentEnd) < 60 || pointToSegmentDistance(b, segmentStart, segmentEnd) < 60) return true;
     }
   }
   return false;
@@ -1694,7 +1700,7 @@ function placeInterdictAt(latlng) {
   if (edge) {
     RoutingEngine.blockEdge(edge.id);
     i.edgeId = edge.id;
-    drawBlockedEdge(edge);
+    refreshBlockedEdges();
     toast('Via bloqueada', `Trecho ${edge.id} agora está interditado.`);
     rerouteActivePaths();
   }
