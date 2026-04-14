@@ -8,6 +8,9 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <script src="https://unpkg.com/three@0.155.0/build/three.min.js"></script>
+  <script src="https://unpkg.com/three@0.155.0/examples/js/loaders/GLTFLoader.js"></script>
   <style>
     :root {
       --font: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
@@ -251,6 +254,41 @@
       border: 1px solid rgba(228,228,231,.9);
       box-shadow: 0 1px 6px rgba(0,0,0,.07), 0 0 0 .5px rgba(0,0,0,.04);
     }
+    .network-widget {
+      position: absolute;
+      top: 100px;
+      right: 14px;
+      width: 220px;
+      height: 240px;
+      z-index: 1200;
+      border-radius: 20px;
+      overflow: hidden;
+      background: rgba(255,255,255,0.96);
+      border: 1px solid rgba(228,228,231,.95);
+      box-shadow: 0 20px 50px rgba(15,23,42,.18);
+      display: flex;
+      flex-direction: column;
+    }
+    .network-widget-header {
+      padding: 12px 14px 8px;
+      background: #fff;
+      border-bottom: 1px solid rgba(228,228,231,.95);
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .02em;
+    }
+    .network-widget-meta {
+      padding: 0 14px 10px;
+      color: var(--text-3);
+      font-size: 11px;
+      line-height: 1.4;
+    }
+    .network-3d-viewer {
+      flex: 1;
+      min-height: 0;
+      background: #F8FAFC;
+    }
     .m-topbar {
       top: 14px; left: 50%; transform: translateX(-50%);
       border-radius: 100px;
@@ -401,6 +439,12 @@
       <div class="clock-date" id="cdate">—</div>
     </div>
 
+    <div class="network-widget" id="network-widget">
+      <div class="network-widget-header">Rede ValeRoute</div>
+      <div class="network-widget-meta">Conectado · visualizador 3D ativo</div>
+      <div id="network-3d" class="network-3d-viewer"></div>
+    </div>
+
     <div class="m-pill m-actions">
       <button class="act-btn primary" onclick="newRequest()">＋ Nova Solicitação</button>
       <div class="act-divider"></div>
@@ -430,12 +474,12 @@
 const CENTER = [-2.5626, -44.3708];
 
 let vehicles = [
-  { id:'VAN-01', type:'van',     emoji:'🚐', driver:'Carlos Mendes',  status:'available', lat:-2.5975, lng:-44.3580 },
-  { id:'VAN-02', type:'van',     emoji:'🚐', driver:'Ana Lima',       status:'en-route',  lat:-2.6012, lng:-44.3635 },
-  { id:'CAM-03', type:'truck',   emoji:'🚛', driver:'João Silva',     status:'en-route',  lat:-2.5958, lng:-44.3658 },
-  { id:'VAN-04', type:'van',     emoji:'🚐', driver:'Pedro Costa',    status:'available', lat:-2.6038, lng:-44.3592 },
-  { id:'SUP-05', type:'support', emoji:'🔧', driver:'Maria Santos',   status:'offline',   lat:-2.5948, lng:-44.3615 },
-  { id:'CAM-06', type:'truck',   emoji:'🚛', driver:'Lucas Ferreira', status:'available', lat:-2.5992, lng:-44.3572 },
+  { id:'VAN-01', tag:'VR-101', type:'van',     emoji:'🚐', driver:'Carlos Mendes',  status:'available', lat:-2.5660, lng:-44.3783, image:null },
+  { id:'VAN-02', tag:'VR-102', type:'van',     emoji:'🚐', driver:'Ana Lima',       status:'available', lat:-2.5624, lng:-44.3792, image:null },
+  { id:'CAM-03', tag:'VR-201', type:'truck',   emoji:'🚛', driver:'João Silva',     status:'en-route',  lat:-2.5517, lng:-44.3788, image:null, modelUrl:'truck.glb' },
+  { id:'VAN-04', tag:'VR-103', type:'van',     emoji:'🚐', driver:'Pedro Costa',    status:'available', lat:-2.5597, lng:-44.3647, image:null },
+  { id:'SUP-05', tag:'VR-301', type:'support', emoji:'🔧', driver:'Maria Santos',   status:'offline',   lat:-2.5604, lng:-44.3628, image:null },
+  { id:'CAM-06', tag:'VR-202', type:'truck',   emoji:'🚛', driver:'Lucas Ferreira', status:'available', lat:-2.5657, lng:-44.3771, image:null, modelUrl:'truck.glb' },
 ];
 
 let teams = [
@@ -679,6 +723,15 @@ const routeLayer = L.layerGroup().addTo(map);
 let selectedVehicleId = null;
 let selectedDestinationId = null;
 let selectedRouteInfo = null;
+let selectedRouteCoords = null;
+let selectedRouteProgress = 0;
+let interdictMode = false;
+
+map.on('click', e => {
+  if (!interdictMode) return;
+  interdictMode = false;
+  placeInterdictAt(e.latlng);
+});
 
 // ════════════════════════════════════════════════
 // MARKERS
@@ -693,11 +746,12 @@ const SCOLOR = { available:'#22C55E', 'en-route':'#F59E0B', offline:'#9CA3AF' };
 
 function vIcon(v) {
   const c = SCOLOR[v.status];
+  const iconHtml = v.image ? `<img src="${v.image}" alt="${v.id}" style="width:32px;height:32px;border-radius:9px;object-fit:cover;border:2px solid #fff">` : `<i class="fa-solid ${v.type === 'truck' ? 'fa-truck' : v.type === 'van' ? 'fa-van-shuttle' : 'fa-wrench'}" style="color:#fff;font-size:16px"></i>`;
   return L.divIcon({
     className: '',
     iconSize: [36, 43], iconAnchor: [18, 43],
     html: `<div style="display:flex;flex-direction:column;align-items:center">
-      <div style="width:34px;height:34px;border-radius:9px;background:${c};display:flex;align-items:center;justify-content:center;font-size:16px;box-shadow:0 2px 8px rgba(0,0,0,.18),0 0 0 2px #fff">${v.emoji}</div>
+      <div style="width:34px;height:34px;border-radius:9px;background:${c};display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,.18),0 0 0 2px #fff">${iconHtml}</div>
       <div style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:5px solid ${c};margin-top:-1px"></div>
     </div>`,
   });
@@ -721,11 +775,13 @@ function tIcon(t) {
 }
 
 function popupV(v) {
-  return `<div style="font-family:system-ui;min-width:156px">
-    <div style="font-weight:700;font-size:14px;margin-bottom:5px">${v.id}</div>
+  return `<div style="font-family:system-ui;min-width:180px">
+    ${v.image ? `<img src="${v.image}" alt="${v.id}" style="width:100%;height:90px;object-fit:cover;border-radius:12px;margin-bottom:8px">` : ''}
+    <div style="font-weight:700;font-size:14px;margin-bottom:5px">${v.id} <span style="font-size:11px;color:#6B7280">(${v.tag})</span></div>
     <div style="font-size:12px;color:#71717A">Motorista: ${v.driver}</div>
     <div style="font-size:12px;color:#71717A">Tipo: ${v.type === 'van' ? 'Van' : v.type === 'truck' ? 'Caminhão' : 'Suporte'}</div>
     <div style="font-size:12px;color:#71717A">Status: ${v.status === 'available' ? '🟢 Disponível' : v.status === 'en-route' ? '🟡 Em rota' : '⚫ Offline'}</div>
+    <div style="font-size:12px;color:#6B7280;margin-top:6px">ValeRoute TAG: ${v.tag}</div>
   </div>`;
 }
 
@@ -788,6 +844,63 @@ function clearRoutingLayer() {
   routeLayer.clearLayers();
 }
 
+function pointToSegmentDistance(point, a, b) {
+  const lat1 = a.lat, lng1 = a.lng;
+  const lat2 = b.lat, lng2 = b.lng;
+  const lat0 = point.lat, lng0 = point.lng;
+  const dx = lat2 - lat1;
+  const dy = lng2 - lng1;
+  if (dx === 0 && dy === 0) return haversine(point, a);
+  const t = Math.max(0, Math.min(1, ((lat0 - lat1) * dx + (lng0 - lng1) * dy) / (dx * dx + dy * dy)));
+  const proj = { lat: lat1 + t * dx, lng: lng1 + t * dy };
+  return haversine(point, proj);
+}
+
+function routeIntersectsBlockedEdge(coords) {
+  const blockedEdges = RoutingEngine.edges.filter(e => e.isBlocked);
+  if (!blockedEdges.length) return false;
+  const points = coords.map(c => ({ lat: c[1], lng: c[0] }));
+  for (const edge of blockedEdges) {
+    const a = RoutingEngine.nodesMap[edge.source];
+    const b = RoutingEngine.nodesMap[edge.target];
+    for (const pt of points) {
+      if (pointToSegmentDistance(pt, a, b) < 60) return true;
+    }
+  }
+  return false;
+}
+
+function getRoutePointAtFraction(coords, fraction) {
+  if (!coords || coords.length === 0) return null;
+  if (fraction <= 0) return { lat: coords[0][0], lng: coords[0][1] };
+  if (fraction >= 1) return { lat: coords[coords.length - 1][0], lng: coords[coords.length - 1][1] };
+  const distances = [0];
+  for (let i = 1; i < coords.length; i++) {
+    distances[i] = distances[i - 1] + haversine({ lat: coords[i - 1][1], lng: coords[i - 1][0] }, { lat: coords[i][1], lng: coords[i][0] });
+  }
+  const total = distances[distances.length - 1];
+  const target = total * fraction;
+  for (let i = 1; i < distances.length; i++) {
+    if (target <= distances[i]) {
+      const segment = target - distances[i - 1];
+      const segmentLength = distances[i] - distances[i - 1];
+      const t = segmentLength === 0 ? 0 : segment / segmentLength;
+      const lat = coords[i - 1][1] + (coords[i][1] - coords[i - 1][1]) * t;
+      const lng = coords[i - 1][0] + (coords[i][0] - coords[i - 1][0]) * t;
+      return { lat, lng };
+    }
+  }
+  return { lat: coords[coords.length - 1][1], lng: coords[coords.length - 1][0] };
+}
+
+function getRouteLength(coords) {
+  let total = 0;
+  for (let i = 1; i < coords.length; i++) {
+    total += haversine({ lat: coords[i - 1][1], lng: coords[i - 1][0] }, { lat: coords[i][1], lng: coords[i][0] });
+  }
+  return total;
+}
+
 function drawRoutingPath(latlngs, label) {
   clearRoutingLayer();
   if (!latlngs || !latlngs.length) return;
@@ -807,6 +920,98 @@ function buildDestinationButtons() {
   }).join('');
 }
 
+function setVehicleImage(url) {
+  const vehicle = vehicles.find(v => v.id === selectedVehicleId);
+  if (!vehicle) return;
+  vehicle.image = url;
+  if (vMarkers[vehicle.id]) {
+    vMarkers[vehicle.id].setIcon(vIcon(vehicle));
+  }
+  renderVehicles();
+  updateSelectionPanel();
+}
+
+function handleVehicleImageUpload(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => setVehicleImage(reader.result);
+  reader.readAsDataURL(file);
+}
+
+function initNetworkViewer() {
+  if (!window.THREE || !window.THREE.GLTFLoader) return;
+  const container = document.getElementById('network-3d');
+  if (!container) return;
+  if (networkViewerState.renderer) {
+    networkViewerState.renderer.dispose();
+    networkViewerState.renderer.domElement.remove();
+  }
+  networkViewerState.container = container;
+  networkViewerState.scene = new THREE.Scene();
+  networkViewerState.camera = new THREE.PerspectiveCamera(35, container.clientWidth / container.clientHeight, 0.1, 1000);
+  networkViewerState.camera.position.set(0, 1.8, 4.2);
+  networkViewerState.renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+  networkViewerState.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  networkViewerState.renderer.setSize(container.clientWidth, container.clientHeight, false);
+  container.innerHTML = '';
+  container.appendChild(networkViewerState.renderer.domElement);
+
+  const ambient = new THREE.HemisphereLight(0xffffff, 0x444444, 1.1);
+  const directional = new THREE.DirectionalLight(0xffffff, 1);
+  directional.position.set(4, 8, 5);
+  networkViewerState.scene.add(ambient, directional);
+
+  const floor = new THREE.GridHelper(6, 10, 0xdde7f2, 0xf5f7fa);
+  floor.position.y = -0.02;
+  networkViewerState.scene.add(floor);
+
+  loadNetworkModel('logoed+device+3d+model.glb');
+  if (!networkViewerState.animating) {
+    networkViewerState.animating = true;
+    requestAnimationFrame(animateNetworkViewer);
+  }
+}
+
+function loadNetworkModel(url) {
+  if (!window.THREE || !window.THREE.GLTFLoader || !networkViewerState.scene) return;
+  const loader = new THREE.GLTFLoader();
+  loader.load(url, gltf => {
+    if (networkViewerState.model) {
+      networkViewerState.scene.remove(networkViewerState.model);
+    }
+    networkViewerState.model = gltf.scene;
+    networkViewerState.model.traverse(child => {
+      if (child.isMesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+      }
+    });
+    const box = new THREE.Box3().setFromObject(networkViewerState.model);
+    const size = box.getSize(new THREE.Vector3()).length();
+    const center = box.getCenter(new THREE.Vector3());
+    networkViewerState.model.position.x -= center.x;
+    networkViewerState.model.position.y -= center.y;
+    networkViewerState.model.position.z -= center.z;
+    const scale = 2.2 / size;
+    networkViewerState.model.scale.setScalar(scale);
+    networkViewerState.scene.add(networkViewerState.model);
+  }, undefined, () => {
+    if (networkViewerState.container) {
+      networkViewerState.container.innerHTML = '<div style="padding:16px;text-align:center;color:#6B7280;font-size:13px">Falha ao carregar o modelo 3D.</div>';
+    }
+  });
+}
+
+function animateNetworkViewer() {
+  if (!networkViewerState.renderer || !networkViewerState.scene || !networkViewerState.camera) return;
+  if (networkViewerState.model) {
+    networkViewerState.model.rotation.y += 0.006;
+  }
+  networkViewerState.renderer.render(networkViewerState.scene, networkViewerState.camera);
+  requestAnimationFrame(animateNetworkViewer);
+}
+
 function updateSelectionPanel() {
   const panel = document.getElementById('selection-panel');
   const vehicle = vehicles.find(v => v.id === selectedVehicleId);
@@ -817,7 +1022,7 @@ function updateSelectionPanel() {
     return;
   }
 
-  const details = [`<div class="strong">Veículo: ${vehicle.id}</div>`, `<div style="margin-top:4px;color:var(--text-3)">Motorista: ${vehicle.driver} · ${vehicle.type === 'van' ? 'Van' : vehicle.type === 'truck' ? 'Caminhão' : 'Suporte'}</div>`];
+  const details = [`<div class="strong">Veículo: ${vehicle.id}</div>`, `<div style="margin-top:4px;color:var(--text-3)">Motorista: ${vehicle.driver} · ${vehicle.type === 'van' ? 'Van' : vehicle.type === 'truck' ? 'Caminhão' : 'Suporte'}</div>`, `<div style="margin-top:4px;color:var(--text-4)">ValeRoute TAG: <strong>${vehicle.tag}</strong></div>`];
   if (dest) {
     details.push(`<div style="margin-top:8px">Destino: <strong>${dest.name}</strong></div>`);
   } else {
@@ -827,20 +1032,115 @@ function updateSelectionPanel() {
     details.push(`<div style="margin-top:8px;color:var(--text-4)">Distância: ${Math.round(selectedRouteInfo.distance)} m · Duração: ${Math.ceil(selectedRouteInfo.duration / 60)} min</div>`);
   }
   details.push(`<div class="dest-list">${buildDestinationButtons()}</div>`);
+  if (vehicle.modelUrl) {
+    details.push(`<div id="truck-preview" style="margin-top:12px;height:200px;border:1px solid var(--border);border-radius:14px;overflow:hidden;background:#F8FAFC"></div>`);
+  }
+  details.push(`<div style="margin-top:12px;display:grid;gap:8px">
+      <input id="vehicle-image-url" type="text" placeholder="URL da imagem do veículo" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:10px;font-size:12px;color:var(--text);">
+      <button class="act-btn primary" style="width:100%;padding:10px 12px;" onclick="setVehicleImage(document.getElementById('vehicle-image-url').value)">Atualizar imagem</button>
+      <input id="vehicle-image-file" type="file" accept="image/*" onchange="handleVehicleImageUpload(event)" style="font-size:11px;color:var(--text-3);">
+    </div>`);
   panel.innerHTML = details.join('');
+  setTimeout(() => refreshTruckPreview(vehicle), 0);
 }
 
 function selectVehicle(id) {
   selectedVehicleId = id;
+  selectedDestinationId = null;
   selectedRouteInfo = null;
+  selectedRouteCoords = null;
+  selectedRouteProgress = 0;
   document.querySelectorAll('.item-row').forEach(row => row.classList.toggle('selected', row.dataset.id === id));
   updateSelectionPanel();
   calculateSelectedRoute();
 }
 
+function initTruckViewer(container) {
+  if (!window.THREE || !window.THREE.GLTFLoader) return;
+  if (truckViewerState.renderer) {
+    truckViewerState.renderer.dispose();
+    truckViewerState.renderer.domElement.remove();
+  }
+  truckViewerState.container = container;
+  truckViewerState.scene = new THREE.Scene();
+  truckViewerState.camera = new THREE.PerspectiveCamera(40, container.clientWidth / container.clientHeight, 0.1, 1000);
+  truckViewerState.camera.position.set(0, 1.8, 3.8);
+  truckViewerState.renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+  truckViewerState.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  truckViewerState.renderer.setSize(container.clientWidth, container.clientHeight, false);
+  container.innerHTML = '';
+  container.appendChild(truckViewerState.renderer.domElement);
+  const ambient = new THREE.HemisphereLight(0xffffff, 0x444444, 1.2);
+  const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+  dirLight.position.set(5, 10, 7.5);
+  truckViewerState.scene.add(ambient, dirLight);
+  const grid = new THREE.GridHelper(6, 12, 0xcccccc, 0xeeeeee);
+  grid.position.y = 0;
+  truckViewerState.scene.add(grid);
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(10, 10), new THREE.MeshStandardMaterial({ color: 0xf8fafe, opacity:0.9, transparent:true }));
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.y = -0.01;
+  truckViewerState.scene.add(floor);
+  if (!truckViewerState.animating) {
+    truckViewerState.animating = true;
+    requestAnimationFrame(animateTruckPreview);
+  }
+}
+
+function loadTruckModel(url) {
+  if (!window.THREE || !window.THREE.GLTFLoader) return;
+  const loader = new THREE.GLTFLoader();
+  if (!truckViewerState.container) return;
+  loader.load(url, gltf => {
+    if (truckViewerState.model) {
+      truckViewerState.scene.remove(truckViewerState.model);
+    }
+    truckViewerState.model = gltf.scene;
+    truckViewerState.model.traverse(child => {
+      if (child.isMesh) child.castShadow = true;
+    });
+    const box = new THREE.Box3().setFromObject(truckViewerState.model);
+    const size = box.getSize(new THREE.Vector3()).length();
+    const center = box.getCenter(new THREE.Vector3());
+    truckViewerState.model.position.x += (truckViewerState.model.position.x - center.x);
+    truckViewerState.model.position.y += (truckViewerState.model.position.y - center.y);
+    truckViewerState.model.position.z += (truckViewerState.model.position.z - center.z);
+    const scale = 2.2 / size;
+    truckViewerState.model.scale.setScalar(scale);
+    truckViewerState.scene.add(truckViewerState.model);
+    truckViewerState.camera.position.set(0, 1.8, 3.8);
+  }, undefined, () => {
+    truckViewerState.container.innerHTML = '<div style="padding:16px;text-align:center;color:#6B7280;font-size:13px">Falha ao carregar o modelo 3D.</div>';
+  });
+}
+
+function refreshTruckPreview(vehicle) {
+  const container = document.getElementById('truck-preview');
+  if (!container) return;
+  if (!vehicle || !vehicle.modelUrl) {
+    container.innerHTML = '<div style="padding:16px;text-align:center;color:#6B7280;font-size:13px">Modelo 3D não disponível.</div>';
+    return;
+  }
+  if (!truckViewerState.container || truckViewerState.container !== container) {
+    initTruckViewer(container);
+  }
+  loadTruckModel(vehicle.modelUrl);
+}
+
+function animateTruckPreview() {
+  if (!truckViewerState.renderer || !truckViewerState.scene || !truckViewerState.camera) return;
+  if (truckViewerState.model) {
+    truckViewerState.model.rotation.y += 0.005;
+  }
+  truckViewerState.renderer.render(truckViewerState.scene, truckViewerState.camera);
+  requestAnimationFrame(animateTruckPreview);
+}
+
 function selectDestination(id) {
   selectedDestinationId = id;
   selectedRouteInfo = null;
+  selectedRouteCoords = null;
+  selectedRouteProgress = 0;
   updateSelectionPanel();
   calculateSelectedRoute();
   const point = keyPoints.find(p => p.id === id);
@@ -901,8 +1201,26 @@ async function calculateSelectedRoute() {
     updateSelectionPanel();
     return;
   }
+  let coords = route.geometry.coordinates.map(c => [c[1], c[0]]);
+  if (routeIntersectsBlockedEdge(coords)) {
+    const localRoute = RoutingEngine.findRoute({ lat: vehicle.lat, lng: vehicle.lng }, { lat: dest.lat, lng: dest.lng });
+    if (localRoute && localRoute.path && localRoute.path.length) {
+      coords = RoutingEngine.getPathLatLngs(localRoute.path);
+      selectedRouteCoords = coords;
+  selectedRouteProgress = 0;
+  selectedRouteInfo = { distance: localRoute.totalDistance, duration: Math.ceil(localRoute.totalDistance / 12) * 60 };
+      drawRoutingPath(coords, `${vehicle.id} → ${dest.label}`);
+      updateSelectionPanel();
+      toast('Rota alternativa', 'Rota ajustada para evitar a interdição local.');
+      return;
+    }
+    toast('Rota bloqueada', 'Interdição impede o uso deste caminho.');
+    updateSelectionPanel();
+    return;
+  }
+  selectedRouteCoords = coords;
+  selectedRouteProgress = 0;
   selectedRouteInfo = { distance: route.distance, duration: route.duration };
-  const coords = route.geometry.coordinates.map(c => [c[1], c[0]]);
   drawRoutingPath(coords, `${vehicle.id} → ${dest.label}`);
   updateSelectionPanel();
   toast('Rota atualizada', `Rota de ${vehicle.id} para ${dest.name} calculada.`);
@@ -917,10 +1235,18 @@ async function runRoutingDemo() {
 }
 
 function rerouteActivePaths() {
-  const button = document.getElementById('route-btn');
-  if (button && button.textContent.includes('🧭')) {
-    runRoutingDemo();
-  }
+  routes.forEach(r => {
+    const v = vehicles.find(x => x.id === r.vid);
+    const t = teams.find(x => x.id === r.tid);
+    if (!v || !t) return;
+    const routeData = RoutingEngine.findRoute({ lat: v.lat, lng: v.lng }, { lat: t.lat, lng: t.lng });
+    if (routeData && routeData.path && routeData.path.length) {
+      r.path = routeData.path;
+      r.coords = RoutingEngine.getPathLatLngs(routeData.path);
+      if (rLines[r.id]) rLines[r.id].setLatLngs(r.coords);
+    }
+  });
+  runRoutingDemo();
 }
 
 function findTeamRoute(v, t) {
@@ -993,13 +1319,13 @@ function renderVehicles() {
 }
 
 function vRow(v) {
-  const ic = v.type === 'van' ? 'i-van' : v.type === 'truck' ? 'i-truck' : 'i-support';
+  const iconClass = v.type === 'truck' ? 'fa-truck' : v.type === 'van' ? 'fa-van-shuttle' : 'fa-wrench';
   const bc = v.status === 'available' ? 'b-available' : v.status === 'en-route' ? 'b-route' : 'b-offline';
   const bl = v.status === 'available' ? 'Disponível' : v.status === 'en-route' ? 'Em Rota' : 'Offline';
   const selected = selectedVehicleId === v.id ? ' selected' : '';
   return `<div class="item-row${selected}" data-id="${v.id}">
-    <div class="item-icon ${ic}">${v.emoji}</div>
-    <div class="item-body"><div class="item-title">${v.id}</div><div class="item-sub">${v.driver}</div></div>
+    <div class="item-icon ${v.type === 'van' ? 'i-van' : v.type === 'truck' ? 'i-truck' : 'i-support'}"><i class="fa-solid ${iconClass}" style="font-size:16px;"></i></div>
+    <div class="item-body"><div class="item-title">${v.id}</div><div class="item-sub">${v.driver} · ${v.tag}</div></div>
     <div class="item-right"><span class="badge ${bc}">${bl}</span></div>
   </div>`;
 }
@@ -1185,15 +1511,34 @@ function toggleSim() {
 }
 
 function simTick() {
+  if (selectedRouteCoords && selectedVehicleId && !routes.some(r => r.vid === selectedVehicleId)) {
+    const v = vehicles.find(x => x.id === selectedVehicleId);
+    if (v) {
+      selectedRouteProgress = Math.min(100, selectedRouteProgress + 3);
+      const pos = getRoutePointAtFraction(selectedRouteCoords, selectedRouteProgress / 100);
+      if (pos) {
+        v.lat = pos.lat;
+        v.lng = pos.lng;
+        if (vMarkers[v.id]) vMarkers[v.id].setLatLng([v.lat, v.lng]);
+      }
+      if (selectedRouteProgress >= 100) {
+        toast(`${v.id} chegou!`, `${v.id} chegou ao destino selecionado.`);
+        selectedRouteCoords = null;
+      }
+    }
+  }
+
   routes.forEach(r => {
     const v = vehicles.find(x => x.id === r.vid);
     if (!v) return;
     r.prog = Math.min(100, r.prog + 3);
-    // Interpolate vehicle position along route
-    const t = r.prog / 100;
-    v.lat = r.fLat + (r.tLat - r.fLat) * t;
-    v.lng = r.fLng + (r.tLng - r.fLng) * t;
-    if (vMarkers[r.vid]) vMarkers[r.vid].setLatLng([v.lat, v.lng]);
+    const coordList = r.coords && r.coords.length ? r.coords : routeLatLngs(r);
+    const pos = getRoutePointAtFraction(coordList, r.prog / 100);
+    if (pos) {
+      v.lat = pos.lat;
+      v.lng = pos.lng;
+      if (vMarkers[r.vid]) vMarkers[r.vid].setLatLng([v.lat, v.lng]);
+    }
 
     if (r.prog >= 100) {
       const team = teams.find(x => x.id === r.tid);
@@ -1273,21 +1618,29 @@ let intSeq = 2;
 const INT_NAMES = ['Inspeção de Segurança','Obra em Andamento','Operação de Carga','Manutenção Elétrica','Vistoria de Equipamentos'];
 
 function addInterdict() {
-  const c    = map.getCenter();
+  interdictMode = !interdictMode;
+  if (interdictMode) {
+    toast('Selecione no mapa', 'Clique em um ponto do mapa para criar a interdição.');
+  } else {
+    toast('Interdição cancelada', 'Nenhum ponto foi bloqueado.');
+  }
+}
+
+function placeInterdictAt(latlng) {
   const name = INT_NAMES[Math.floor(Math.random() * INT_NAMES.length)];
   const now  = new Date();
   const since = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
   const until = `${String(now.getHours() + 2).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
-  const i = { id:`INT-${String(intSeq++).padStart(2,'0')}`, name, lat:c.lat, lng:c.lng, radius:160, reason:name, since, until };
+  const i = { id:`INT-${String(intSeq++).padStart(2,'0')}`, name, lat:latlng.lat, lng:latlng.lng, radius:160, reason:name, since, until };
   interdictions.push(i);
+  interdictMode = false;
   mountInterdict(i);
-  const edge = RoutingEngine.findNearestEdge(c.lat, c.lng);
+  const edge = RoutingEngine.findNearestEdge(latlng.lat, latlng.lng);
   if (edge) {
-    RoutingEngine.toggleEdge(edge.id);
-    toast('Via bloqueada', `Bloco de rota aplicado em trecho ${edge.id}.`);
+    RoutingEngine.blockEdge(edge.id);
+    toast('Via bloqueada', `Trecho ${edge.id} agora está interditado.`);
     rerouteActivePaths();
   }
-  toast('Interdição adicionada', `${name} — vigente das ${since} às ${until}.`);
   renderAll();
   document.querySelector('[data-tab="alerts"]').click();
 }
@@ -1298,6 +1651,7 @@ function addInterdict() {
 
 renderAll();
 updateSelectionPanel();
+initNetworkViewer();
 setTimeout(() => toast('Sistema operacional', 'Rastreamento em tempo real ativo.'), 600);
 setTimeout(() => toast('Interdição ativa', 'Pátio Sul interditado para manutenção.'), 2400);
 setTimeout(() => toast('VAN-01 disponível', 'Veículo aguardando nova solicitação.'), 4200);
