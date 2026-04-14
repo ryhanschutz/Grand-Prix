@@ -370,6 +370,7 @@
       <button class="act-btn" id="sim-btn" onclick="toggleSim()">▶ Simular</button>
       <button class="act-btn" onclick="fitAll()">⊡ Enquadrar</button>
       <button class="act-btn" onclick="addInterdict()">⚠ Interdição</button>
+      <button class="act-btn" id="route-btn" onclick="runRoutingDemo()">🧭 Roteamento</button>
       <div class="act-divider"></div>
       <button class="act-btn" id="layer-btn" onclick="toggleLayer()">🛰 Satélite</button>
     </div>
@@ -428,6 +429,192 @@ let keyPoints = [
   { id:'KP-VV', name:'Virador de Vagões', lat:-2.5680293295264036, lng:-44.34465188856429, label:'VV' },
 ];
 
+function haversine(a, b) {
+  const R = 6371000;
+  const toRad = x => x * Math.PI / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const sinLat = Math.sin(dLat / 2);
+  const sinLng = Math.sin(dLng / 2);
+  const x = sinLat * sinLat + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * sinLng * sinLng;
+  return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+}
+
+const routingNodes = [
+  { id: 0, name: 'Píer 4', lat:-2.5516093787565404, lng:-44.37886196991344 },
+  { id: 1, name: 'Píer 3', lat:-2.5623676208640966, lng:-44.379214049076126 },
+  { id: 2, name: 'Píer 1', lat:-2.5660185044179937, lng:-44.378238787848936 },
+  { id: 3, name: 'Ponta da Madeira', lat:-2.565083133064946, lng:-44.37528724511482 },
+  { id: 4, name: 'Portaria do Píer 4', lat:-2.559505434070152, lng:-44.36466766976164 },
+  { id: 5, name: 'Portaria do Píer 3', lat:-2.5646636502314757, lng:-44.37662488789419 },
+  { id: 6, name: 'Portaria do Píer 1', lat:-2.5657101572383048, lng:-44.37705623441668 },
+  { id: 7, name: 'Subestação SE-3150K-01', lat:-2.5603999155329635, lng:-44.36282647717872 },
+  { id: 8, name: 'Virador de Vagões', lat:-2.5680293295264036, lng:-44.34465188856429 },
+];
+
+const routingEdges = [
+  { id: 0, source: 0, target: 4, weight: haversine(routingNodes[0], routingNodes[4]), isBlocked: false },
+  { id: 1, source: 0, target: 3, weight: haversine(routingNodes[0], routingNodes[3]), isBlocked: false },
+  { id: 2, source: 3, target: 1, weight: haversine(routingNodes[3], routingNodes[1]), isBlocked: false },
+  { id: 3, source: 3, target: 2, weight: haversine(routingNodes[3], routingNodes[2]), isBlocked: false },
+  { id: 4, source: 1, target: 2, weight: haversine(routingNodes[1], routingNodes[2]), isBlocked: false },
+  { id: 5, source: 4, target: 7, weight: haversine(routingNodes[4], routingNodes[7]), isBlocked: false },
+  { id: 6, source: 1, target: 5, weight: haversine(routingNodes[1], routingNodes[5]), isBlocked: false },
+  { id: 7, source: 2, target: 6, weight: haversine(routingNodes[2], routingNodes[6]), isBlocked: false },
+  { id: 8, source: 2, target: 8, weight: haversine(routingNodes[2], routingNodes[8]), isBlocked: false },
+  { id: 9, source: 3, target: 8, weight: haversine(routingNodes[3], routingNodes[8]), isBlocked: false },
+];
+
+class MinHeap {
+  constructor(compare) { this.items = []; this.compare = compare; }
+  swap(i, j) { [this.items[i], this.items[j]] = [this.items[j], this.items[i]]; }
+  parent(i) { return Math.floor((i - 1) / 2); }
+  left(i) { return 2 * i + 1; }
+  right(i) { return 2 * i + 2; }
+  push(item) {
+    this.items.push(item);
+    let idx = this.items.length - 1;
+    while (idx > 0) {
+      const p = this.parent(idx);
+      if (this.compare(this.items[idx], this.items[p]) < 0) { this.swap(idx, p); idx = p; } else break;
+    }
+  }
+  pop() {
+    if (!this.items.length) return null;
+    this.swap(0, this.items.length - 1);
+    const item = this.items.pop();
+    let idx = 0;
+    while (true) {
+      const left = this.left(idx);
+      const right = this.right(idx);
+      let candidate = idx;
+      if (left < this.items.length && this.compare(this.items[left], this.items[candidate]) < 0) candidate = left;
+      if (right < this.items.length && this.compare(this.items[right], this.items[candidate]) < 0) candidate = right;
+      if (candidate !== idx) { this.swap(idx, candidate); idx = candidate; } else break;
+    }
+    return item;
+  }
+  isEmpty() { return this.items.length === 0; }
+}
+
+const RoutingEngine = {
+  nodes: routingNodes,
+  edges: routingEdges,
+  nodesMap: {},
+  init() {
+    this.nodesMap = this.nodes.reduce((acc, node) => { acc[node.id] = node; return acc; }, {});
+    this.adjacency = this.buildAdjacency();
+  },
+  buildAdjacency() {
+    const adj = {};
+    for (const edge of this.edges) {
+      if (edge.isBlocked) continue;
+      adj[edge.source] = adj[edge.source] || [];
+      adj[edge.source].push({ to: edge.target, cost: edge.weight, edgeId: edge.id });
+      adj[edge.target] = adj[edge.target] || [];
+      adj[edge.target].push({ to: edge.source, cost: edge.weight, edgeId: edge.id });
+    }
+    return adj;
+  },
+  heuristic(nodeId, goalId) {
+    return haversine(this.nodesMap[nodeId], this.nodesMap[goalId]);
+  },
+  findNearestNode(lat, lng) {
+    let bestId = null;
+    let bestDist = Infinity;
+    for (const node of this.nodes) {
+      const dist = haversine({ lat, lng }, node);
+      if (dist < bestDist) { bestDist = dist; bestId = node.id; }
+    }
+    return bestId;
+  },
+  findNearestEdge(lat, lng) {
+    let best = null;
+    let bestDist = Infinity;
+    for (const edge of this.edges) {
+      const a = this.nodesMap[edge.source];
+      const b = this.nodesMap[edge.target];
+      const d1 = haversine({ lat, lng }, a);
+      const d2 = haversine({ lat, lng }, b);
+      const current = Math.min(d1, d2);
+      if (current < bestDist) { bestDist = current; best = edge; }
+    }
+    return best;
+  },
+  findRoute(start, end) {
+    const startId = typeof start === 'number' ? start : this.findNearestNode(start.lat, start.lng);
+    const goalId = typeof end === 'number' ? end : this.findNearestNode(end.lat, end.lng);
+    if (startId === null || goalId === null) return null;
+    const adjacency = this.buildAdjacency();
+    const open = new MinHeap((a, b) => a.f - b.f);
+    const cameFrom = {};
+    const gScore = {};
+    const fScore = {};
+    for (const node of this.nodes) {
+      gScore[node.id] = Infinity;
+      fScore[node.id] = Infinity;
+    }
+    gScore[startId] = 0;
+    fScore[startId] = this.heuristic(startId, goalId);
+    open.push({ id: startId, f: fScore[startId] });
+    const visited = new Set();
+
+    while (!open.isEmpty()) {
+      const current = open.pop();
+      if (visited.has(current.id)) continue;
+      visited.add(current.id);
+      if (current.id === goalId) {
+        const path = [];
+        let nodeId = goalId;
+        while (nodeId !== undefined) {
+          path.unshift(nodeId);
+          nodeId = cameFrom[nodeId];
+        }
+        return { path, totalDistance: gScore[goalId] };
+      }
+      const neighbors = adjacency[current.id] || [];
+      for (const neighbor of neighbors) {
+        const tentative = gScore[current.id] + neighbor.cost;
+        if (tentative < gScore[neighbor.to]) {
+          cameFrom[neighbor.to] = current.id;
+          gScore[neighbor.to] = tentative;
+          fScore[neighbor.to] = tentative + this.heuristic(neighbor.to, goalId);
+          open.push({ id: neighbor.to, f: fScore[neighbor.to] });
+        }
+      }
+    }
+    return null;
+  },
+  blockEdge(edgeId) {
+    const edge = this.edges.find(e => e.id === edgeId);
+    if (edge) { edge.isBlocked = true; this.adjacency = this.buildAdjacency(); }
+    return edge;
+  },
+  unblockEdge(edgeId) {
+    const edge = this.edges.find(e => e.id === edgeId);
+    if (edge) { edge.isBlocked = false; this.adjacency = this.buildAdjacency(); }
+    return edge;
+  },
+  toggleEdge(edgeId) {
+    const edge = this.edges.find(e => e.id === edgeId);
+    if (!edge) return null;
+    edge.isBlocked = !edge.isBlocked;
+    this.adjacency = this.buildAdjacency();
+    return edge;
+  },
+  updateWeights() {
+    this.adjacency = this.buildAdjacency();
+  },
+  getPathLatLngs(path) {
+    return path.map(id => {
+      const node = this.nodesMap[id];
+      return [node.lat, node.lng];
+    });
+  }
+};
+
+RoutingEngine.init();
+
 // ════════════════════════════════════════════════
 // MAP INIT
 // ════════════════════════════════════════════════
@@ -451,6 +638,7 @@ let activeLayer = 'light';
 tileLayers.light.addTo(map);
 
 L.control.zoom({ position: 'bottomright' }).addTo(map);
+const routeLayer = L.layerGroup().addTo(map);
 
 // ════════════════════════════════════════════════
 // MARKERS
@@ -541,12 +729,60 @@ function mountT(t) {
   tMarkers[t.id] = m;
 }
 
+function routeLatLngs(r) {
+  if (r.path && r.path.length) {
+    return RoutingEngine.getPathLatLngs(r.path);
+  }
+  return [[r.fLat, r.fLng],[r.tLat, r.tLng]];
+}
+
 function mountRoute(r) {
-  const line = L.polyline([[r.fLat, r.fLng],[r.tLat, r.tLng]], {
+  const line = L.polyline(routeLatLngs(r), {
     color: r.color, weight: 3, opacity: .85,
     dashArray: '10 8', className: 'animated-route',
   }).addTo(map);
   rLines[r.id] = line;
+}
+
+function clearRoutingLayer() {
+  routeLayer.clearLayers();
+}
+
+function drawRoutingPath(path) {
+  clearRoutingLayer();
+  const latlngs = RoutingEngine.getPathLatLngs(path);
+  if (!latlngs.length) return;
+  const line = L.polyline(latlngs, {
+    color: '#00BFA5', weight: 5, opacity: .92, dashArray: null,
+  }).addTo(routeLayer);
+  map.fitBounds(line.getBounds(), { padding: [40, 40] });
+}
+
+function runRoutingDemo() {
+  const startId = 4; // Portaria do Píer 4
+  const endId = 2;   // Píer 1
+  const result = RoutingEngine.findRoute(startId, endId);
+  if (!result) {
+    toast('Roteamento falhou', 'Nenhum caminho disponível entre os pontos.');
+    return;
+  }
+  drawRoutingPath(result.path);
+  const startNode = RoutingEngine.nodesMap[startId];
+  const endNode = RoutingEngine.nodesMap[endId];
+  toast('Rota traçada', `De ${startNode.name} a ${endNode.name} • ${Math.round(result.totalDistance)} m`);
+}
+
+function rerouteActivePaths() {
+  const button = document.getElementById('route-btn');
+  if (button && button.textContent.includes('🧭')) {
+    runRoutingDemo();
+  }
+}
+
+function findTeamRoute(v, t) {
+  const result = RoutingEngine.findRoute({ lat: v.lat, lng: v.lng }, { lat: t.lat, lng: t.lng });
+  if (!result) return null;
+  return result;
 }
 
 function poiIcon(point) {
@@ -865,6 +1101,12 @@ function autoAssign(v, t) {
   v.status = 'en-route';
   t.status = 'assigned';
   t.vehicle = v.id;
+  const routeData = findTeamRoute(v, t);
+  if (routeData) {
+    r.path = routeData.path;
+    r.totalDistance = routeData.totalDistance;
+    drawRoutingPath(routeData.path);
+  }
   routes.push(r);
   mountRoute(r);
   vMarkers[v.id].setIcon(vIcon(v));
@@ -890,6 +1132,12 @@ function addInterdict() {
   const i = { id:`INT-${String(intSeq++).padStart(2,'0')}`, name, lat:c.lat, lng:c.lng, radius:160, reason:name, since, until };
   interdictions.push(i);
   mountInterdict(i);
+  const edge = RoutingEngine.findNearestEdge(c.lat, c.lng);
+  if (edge) {
+    RoutingEngine.toggleEdge(edge.id);
+    toast('Via bloqueada', `Bloco de rota aplicado em trecho ${edge.id}.`);
+    rerouteActivePaths();
+  }
   toast('Interdição adicionada', `${name} — vigente das ${since} às ${until}.`);
   renderAll();
   document.querySelector('[data-tab="alerts"]').click();
@@ -900,6 +1148,7 @@ function addInterdict() {
 // ════════════════════════════════════════════════
 
 renderAll();
+runRoutingDemo();
 setTimeout(() => toast('Sistema operacional', 'Rastreamento em tempo real ativo.'), 600);
 setTimeout(() => toast('Interdição ativa', 'Pátio Sul interditado para manutenção.'), 2400);
 setTimeout(() => toast('VAN-01 disponível', 'Veículo aguardando nova solicitação.'), 4200);
