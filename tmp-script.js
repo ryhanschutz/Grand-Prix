@@ -425,7 +425,8 @@ function removeInterdict(id) {
 
 function routeIntersectsBlockedEdge(coords) {
   const blockedEdges = RoutingEngine.edges.filter(e => e.isBlocked);
-  if (!blockedEdges.length) return false;
+  const blockedCircles = interdictions.map(i => ({ lat: i.lat, lng: i.lng, radius: i.radius }));
+  if (!blockedEdges.length && !blockedCircles.length) return false;
   const points = coords.map(c => ({ lat: c[1], lng: c[0] }));
   for (const edge of blockedEdges) {
     const a = RoutingEngine.nodesMap[edge.source];
@@ -438,6 +439,11 @@ function routeIntersectsBlockedEdge(coords) {
       const segmentStart = points[i - 1];
       const segmentEnd = points[i];
       if (pointToSegmentDistance(a, segmentStart, segmentEnd) < 60 || pointToSegmentDistance(b, segmentStart, segmentEnd) < 60) return true;
+    }
+  }
+  for (const circle of blockedCircles) {
+    for (const pt of points) {
+      if (haversine(circle, pt) <= circle.radius) return true;
     }
   }
   return false;
@@ -539,7 +545,15 @@ function initNetworkViewer() {
   floor.position.y = -0.02;
   networkViewerState.scene.add(floor);
 
-  loadNetworkModel('network-device.glb');
+  const axes = new THREE.AxesHelper(1.2);
+  axes.position.y = 0.05;
+  networkViewerState.scene.add(axes);
+
+  if (window.THREE && window.THREE.GLTFLoader) {
+    loadNetworkModel('network-device.glb');
+  } else {
+    createDefaultNetworkModel();
+  }
   if (!networkViewerState.animating) {
     networkViewerState.animating = true;
     requestAnimationFrame(animateNetworkViewer);
@@ -572,15 +586,37 @@ function loadNetworkModel(url) {
     networkViewerState.model.position.x -= center.x;
     networkViewerState.model.position.y -= center.y;
     networkViewerState.model.position.z -= center.z;
-    const scale = 2.2 / size;
+    const scale = size > 0 ? 2.2 / size : 1;
     networkViewerState.model.scale.setScalar(scale);
     networkViewerState.scene.add(networkViewerState.model);
   }, undefined, error => {
     console.error('Falha ao carregar modelo 3D:', error);
     if (networkViewerState.container) {
-      networkViewerState.container.innerHTML = '<div style="padding:16px;text-align:center;color:#6B7280;font-size:13px">Falha ao carregar o modelo 3D.</div>';
+      createDefaultNetworkModel();
     }
   });
+}
+
+function createDefaultNetworkModel() {
+  if (!window.THREE || !networkViewerState.scene) return;
+  if (networkViewerState.model) {
+    networkViewerState.scene.remove(networkViewerState.model);
+    networkViewerState.model = null;
+  }
+  const group = new THREE.Group();
+  const material = new THREE.MeshStandardMaterial({ color: 0x3B82F6, roughness: 0.4, metalness: 0.2 });
+  const box = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.18, 0.8), material);
+  const cone = new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.4, 16), new THREE.MeshStandardMaterial({ color: 0x10B981 }));
+  cone.position.set(0, 0.35, 0);
+  const torus = new THREE.Mesh(new THREE.TorusGeometry(0.35, 0.08, 16, 100), new THREE.MeshStandardMaterial({ color: 0xF59E0B }));
+  torus.rotation.x = Math.PI / 2;
+  group.add(box, cone, torus);
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 0.75, 0.08, 24), new THREE.MeshStandardMaterial({ color: 0xE5E7EB }));
+  base.position.y = -0.12;
+  group.add(base);
+  group.position.y = 0.05;
+  networkViewerState.model = group;
+  networkViewerState.scene.add(group);
 }
 
 function animateNetworkViewer() {
@@ -778,29 +814,27 @@ async function calculateSelectedRoute() {
   const dest = keyPoints.find(p => p.id === selectedDestinationId);
   if (!vehicle || !dest) return;
   selectedRouteInfo = null;
+
+  const localRoute = RoutingEngine.findRoute({ lat: vehicle.lat, lng: vehicle.lng }, { lat: dest.lat, lng: dest.lng });
+  if (localRoute && localRoute.path && localRoute.path.length) {
+    const coords = RoutingEngine.getPathLatLngs(localRoute.path);
+    selectedRouteCoords = coords;
+    selectedRouteProgress = 0;
+    selectedRouteInfo = { distance: localRoute.totalDistance, duration: Math.ceil(localRoute.totalDistance / 12) * 60 };
+    drawRoutingPath(coords, `${vehicle.id} → ${dest.label}`);
+    updateSelectionPanel();
+    toast('Rota local', `Rota de ${vehicle.id} para ${dest.name} calculada pelo grafo local.`);
+    return;
+  }
+
   const route = await fetchRoute({ lat: vehicle.lat, lng: vehicle.lng }, { lat: dest.lat, lng: dest.lng }, vehicle.type);
   if (!route) {
     toast('Roteamento indisponível', 'Não foi possível calcular a rota com o serviço de mapa.');
     updateSelectionPanel();
     return;
   }
-  let coords = route.geometry.coordinates.map(c => [c[1], c[0]]);
-  if (routeIntersectsBlockedEdge(coords)) {
-    const localRoute = RoutingEngine.findRoute({ lat: vehicle.lat, lng: vehicle.lng }, { lat: dest.lat, lng: dest.lng });
-    if (localRoute && localRoute.path && localRoute.path.length) {
-      coords = RoutingEngine.getPathLatLngs(localRoute.path);
-      selectedRouteCoords = coords;
-      selectedRouteProgress = 0;
-      selectedRouteInfo = { distance: localRoute.totalDistance, duration: Math.ceil(localRoute.totalDistance / 12) * 60 };
-      drawRoutingPath(coords, `${vehicle.id} → ${dest.label}`);
-      updateSelectionPanel();
-      toast('Rota alternativa', 'Rota ajustada para evitar a interdição local.');
-      return;
-    }
-    toast('Rota bloqueada', 'Interdição impede o uso deste caminho.');
-    updateSelectionPanel();
-    return;
-  }
+
+  const coords = route.geometry.coordinates.map(c => [c[1], c[0]]);
   selectedRouteCoords = coords;
   selectedRouteProgress = 0;
   selectedRouteInfo = { distance: route.distance, duration: route.duration };
